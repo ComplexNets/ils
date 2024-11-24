@@ -3,7 +3,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Dict, List, Optional
-from models.shortList_frag import fragments
+from core.combine_fragments import get_filtered_fragments, combine_fragments
 from utils.utils import get_fragment_properties
 
 # UNIFAC group parameters for heat capacity calculation
@@ -36,10 +36,10 @@ def estimate_fragment_heat_capacity(fragment: Dict) -> Optional[float]:
             
         # Get required properties
         mw = props['molecular_weight']
-        heavy_atoms = props['heavy_atoms']
-        rotatable_bonds = props['rotatable_bonds']
-        h_donors = props['h_bond_donors']
-        h_acceptors = props['h_bond_acceptors']
+        heavy_atoms = props['heavy_atom_count']
+        rotatable_bonds = props['rotatable_bond_count']
+        h_donors = props['hydrogen_bond_donor_count']
+        h_acceptors = props['hydrogen_bond_acceptor_count']
         
         if not all([mw, heavy_atoms is not None]):
             print(f"  Missing required properties for {fragment['name']}")
@@ -194,76 +194,71 @@ def calculate_ionic_liquid_heat_capacity(ionic_liquid: Dict) -> Optional[float]:
         print(f"Error calculating ionic liquid heat capacity: {e}")
         return None
 
-def screen_fragments_by_heat_capacity(fragments: List[Dict], target_range: tuple) -> Dict[str, List[Dict]]:
+def screen_fragments_by_heat_capacity(fragments_data: Dict[str, List[Dict]], target_range: tuple) -> Dict[str, List[Dict]]:
     """
     Screen fragments based on estimated heat capacity
-    Returns dictionary of fragments organized by type that meet the target range
+    Args:
+        fragments_data: Dictionary of fragments organized by type (cation, anion, alkyl_chain)
+        target_range: Tuple of (min_capacity, max_capacity) in J/mol·K
+    Returns:
+        Dictionary of fragments organized by type that meet the target range
     """
     min_capacity, max_capacity = target_range
     
-    # Initialize dictionary for organized fragments
-    fragments_data = {
-        'Cation': [],
-        'Anion': [],
-        'Alkyl Chain': []
-    }
+    # Initialize output dictionary with same structure as input
+    screened_fragments = {frag_type: [] for frag_type in fragments_data.keys()}
     
-    print("\nScreening fragments by heat capacity...")
-    
-    for fragment in fragments:
-        frag_type = fragment['fragment_type']
-        if frag_type in fragments_data:
+    for frag_type, fragments in fragments_data.items():
+        for fragment in fragments:
             estimated_capacity = estimate_fragment_heat_capacity(fragment)
             
             if estimated_capacity is not None:
-                # Check if estimated capacity contributes to target range
-                if min_capacity/3 <= estimated_capacity <= max_capacity/2:  # Rough estimation since this is just one component
-                    fragments_data[frag_type].append({
-                        'name': fragment['name'],
-                        'smiles': fragment['smiles'],
-                        'heat_capacity': estimated_capacity,
-                        'fragment_type': frag_type
+                # Use configurable scaling factors for component contribution
+                scaling_factor = 1/3  # Can be adjusted or passed as parameter
+                if min_capacity * scaling_factor <= estimated_capacity <= max_capacity * scaling_factor:
+                    screened_fragments[frag_type].append({
+                        **fragment,  # Preserve all original properties
+                        'estimated_heat_capacity': estimated_capacity
                     })
     
-    return fragments_data
+    return screened_fragments
 
-def test_heat_capacity_calculations():
-    """Test function to show detailed heat capacity calculations"""
-    print("\nTesting with fragments from shortList_frag.py...")
+def test_heat_capacity_calculations(fragments_data: Optional[Dict[str, List[Dict]]] = None,
+                                  combinations: Optional[List[Dict]] = None,
+                                  num_test_combinations: int = 3):
+    """
+    Test function to show detailed heat capacity calculations
+    Args:
+        fragments_data: Optional dictionary of fragments to test screening
+        combinations: Optional list of ionic liquid combinations to test
+        num_test_combinations: Number of combinations to test
+    """
+    print("\n=== Testing Heat Capacity Calculations ===")
     
-    test_il = {
-        'cation': {
-            'name': 'Ethylimidazolium',
-            'fragment_type': 'cation',
-            'molecular_weight': 111.2,
-            'h_bond_donors': 1,
-            'h_bond_acceptors': 2
-        },
-        'anion': {
-            'name': 'Tetrafluoroborate',
-            'fragment_type': 'anion',
-            'molecular_weight': 86.8,
-            'h_bond_donors': 0,
-            'h_bond_acceptors': 4
-        },
-        'alkyl_chain': {
-            'name': 'Ethyl',
-            'fragment_type': 'alkyl_chain',
-            'molecular_weight': 29.1,
-            'h_bond_donors': 0,
-            'h_bond_acceptors': 0
-        }
-    }
+    if combinations:
+        # Test provided combinations
+        for i, il in enumerate(combinations[:num_test_combinations]):
+            print(f"\nTesting combination {i+1}:")
+            print(f"Cation: {il['cation']['name']}")
+            print(f"Anion: {il['anion']['name']}")
+            if 'alkyl_chain' in il:
+                print(f"Alkyl chain: {il['alkyl_chain']['name']}")
+                
+            heat_capacity = calculate_ionic_liquid_heat_capacity(il)
+            if heat_capacity is not None:
+                print(f"Calculated heat capacity: {heat_capacity:.2f} J/mol·K")
     
-    print(f"\nTest Ionic Liquid: {test_il['cation']['name']} {test_il['anion']['name']} with {test_il['alkyl_chain']['name']}")
-    
-    # Calculate full ionic liquid heat capacity
-    il_cp = calculate_ionic_liquid_heat_capacity(test_il)
-    
-    if il_cp is not None:
-        print(f"\nFinal Ionic Liquid Heat Capacity: {il_cp:.1f} J/mol·K")
-    else:
-        print("\nError: Could not calculate heat capacity")
+    if fragments_data:
+        # Test fragment screening
+        print("\nTesting fragment screening:")
+        target_range = (100, 400)  # J/mol·K, can be parameterized
+        screened = screen_fragments_by_heat_capacity(fragments_data, target_range)
+        
+        for frag_type, fragments in screened.items():
+            if fragments:  # Only print if there are fragments that passed screening
+                print(f"\n{frag_type.capitalize()} fragments within heat capacity range {target_range}:")
+                for frag in fragments:
+                    print(f"  {frag['name']}: {frag['estimated_heat_capacity']:.2f} J/mol·K")
 
 if __name__ == "__main__":
     print("\n=== Heat Capacity Calculation Module Test ===")

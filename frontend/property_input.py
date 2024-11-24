@@ -22,8 +22,34 @@ class PropertyRanges:
                 range=(0, 8000),
                 importance=3,
                 unit="kg/m³"
+            ),
+            'toxicity': PropertyCriteria(
+                range=(0.1, 100.0),  # IC50 in mM, higher is better (less toxic)
+                importance=3,
+                unit="mM"
             )
         }
+
+    def update_property(self, property_name: str, range_values: tuple, weight: float = None, is_strict: bool = False):
+        """Update a property's range and importance
+        
+        Args:
+            property_name: Name of the property to update
+            range_values: Tuple of (min, max) values
+            weight: Optional weight/importance value (0-1)
+            is_strict: Whether this is a strict constraint
+        """
+        if property_name not in self.properties:
+            self.properties[property_name] = PropertyCriteria(
+                range=range_values,
+                importance=int(weight * 5) if weight is not None else 3,
+                unit=""
+            )
+        else:
+            prop = self.properties[property_name]
+            prop.range = range_values
+            if weight is not None:
+                prop.importance = int(weight * 5)
 
     def get_user_input(self):
         """Get property ranges and importance weights from user input"""
@@ -49,12 +75,24 @@ class PropertyRanges:
             # Validate importance
             if not 1 <= density_importance <= 5:
                 raise ValueError("Importance must be between 1 and 5")
+                
+            # Toxicity Input
+            print("\nToxicity (IC50):")
+            min_toxicity = float(input(f"Minimum IC50 ({self.properties['toxicity'].unit}): "))
+            max_toxicity = float(input(f"Maximum IC50 ({self.properties['toxicity'].unit}): "))
+            toxicity_importance = int(input("Importance (1-5, where 5 is most important): "))
+            
+            # Validate importance
+            if not 1 <= toxicity_importance <= 5:
+                raise ValueError("Importance must be between 1 and 5")
             
             # Update the properties
             self.properties['heat_capacity'].range = (min_capacity, max_capacity)
             self.properties['heat_capacity'].importance = hc_importance
             self.properties['density'].range = (min_density, max_density)
             self.properties['density'].importance = density_importance
+            self.properties['toxicity'].range = (min_toxicity, max_toxicity)
+            self.properties['toxicity'].importance = toxicity_importance
             
         except ValueError as e:
             print(f"Error: {e}")
@@ -62,7 +100,7 @@ class PropertyRanges:
         
         return self.properties
 
-    def calculate_objective_score(self, heat_capacity: float, density: float) -> float:
+    def calculate_objective_score(self, heat_capacity: float, density: float, toxicity: float) -> float:
         """
         Calculate weighted objective score for a given ionic liquid
         Returns score between 0 and 1, where 1 is best match
@@ -94,6 +132,17 @@ class PropertyRanges:
         )
         scores.append(density_score)
         weights.append(density_weight)
+        
+        # Toxicity Score
+        toxicity_prop = self.properties['toxicity']
+        toxicity_weight = toxicity_prop.importance / total_importance
+        toxicity_score = self._calculate_property_score(
+            toxicity, 
+            toxicity_prop.range[0], 
+            toxicity_prop.range[1]
+        )
+        scores.append(toxicity_score)
+        weights.append(toxicity_weight)
         
         # Calculate weighted average
         final_score = sum(s * w for s, w in zip(scores, weights))
@@ -149,9 +198,21 @@ def display_property_inputs():
         d_importance = st.slider("Importance", 1, 5, 3, key="d_importance")
     d_strict = st.checkbox("Strict constraint", key="d_strict")
     
+    # Toxicity
+    st.subheader("Toxicity (IC50, mM)")
+    t_col1, t_col2, t_col3 = st.columns(3)
+    with t_col1:
+        t_min = st.number_input("Min", value=0.1, step=0.1, key="t_min")
+    with t_col2:
+        t_max = st.number_input("Max", value=100.0, step=1.0, key="t_max")
+    with t_col3:
+        t_importance = st.slider("Importance", 1, 5, 3, key="t_importance")
+    t_strict = st.checkbox("Strict constraint", key="t_strict")
+    
     # Update optimizer constraints
     optimizer.set_constraint("heat_capacity", hc_min, hc_max, hc_importance/5.0, hc_strict)
     optimizer.set_constraint("density", d_min, d_max, d_importance/5.0, d_strict)
+    optimizer.set_constraint("toxicity", t_min, t_max, t_importance/5.0, t_strict)
     
     # Run optimization
     if st.button("Find Optimal Ionic Liquids"):
@@ -208,6 +269,7 @@ def display_property_inputs():
                 with st.expander(f"{i+1}. {solution['name']} (Score: {solution['pareto_score']:.3f})"):
                     st.write(f"Heat Capacity: {solution['heat_capacity']:.1f} J/mol·K")
                     st.write(f"Density: {solution['density']:.1f} kg/m³")
+                    st.write(f"Toxicity (IC50): {solution['toxicity']:.1f} mM")
                     if solution['in_ilthermo']:
                         st.write("✓ Found in ILThermo database")
 
@@ -226,8 +288,9 @@ def main():
         print("\nExample objective score calculation:")
         test_hc = 250
         test_density = 1000
-        score = property_ranges.calculate_objective_score(test_hc, test_density)
-        print(f"Score for HC={test_hc}, density={test_density}: {score:.3f}")
+        test_toxicity = 50
+        score = property_ranges.calculate_objective_score(test_hc, test_density, test_toxicity)
+        print(f"Score for HC={test_hc}, density={test_density}, toxicity={test_toxicity}: {score:.3f}")
 
 if __name__ == "__main__":
     main()

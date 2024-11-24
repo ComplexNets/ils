@@ -19,28 +19,40 @@ def get_filtered_fragments() -> Dict:
         frag_type = fragment['fragment_type']
         if frag_type in fragments_data:
             print(f"\nProcessing {fragment['name']} ({frag_type}):")
-            # Get properties from database
-            props = get_fragment_properties(fragment['name'], frag_type)
-            print(f"  Properties: {props}")
             
-            if not props:
-                print(f"  Warning: No properties found for {fragment['name']}")
-                continue
-            
-            # Keep original fragment structure and add molecular properties
-            processed_fragment = fragment.copy()  # Keep original data
+            # Create processed fragment with default properties
+            processed_fragment = fragment.copy()
             processed_fragment.update({
-                'name': fragment['name'],  
-                'molecular_weight': props.get('molecular_weight', 0.0),
-                'logp': 0.0,
-                'h_bond_donors': props.get('h_bond_donors', 0),
-                'h_bond_acceptors': props.get('h_bond_acceptors', 0),
-                'rotatable_bonds': props.get('rotatable_bonds', 0),
+                'name': fragment['name'],
+                'molecular_weight': 0.0,
+                'log_p': 0.0,
+                'h_bond_donor_count': 0,
+                'h_bond_acceptor_count': 0,
+                'rotatable_bond_count': 0,
                 'complexity': 0.0,
-                'charge': props.get('charge', 0),
-                'heavy_atoms': props.get('heavy_atoms', 0),
+                'charge': 0,
+                'heavy_atom_count': 0,
                 'tpsa': 0.0
             })
+            
+            # Try to get properties from database first
+            try:
+                props = get_fragment_properties(fragment['name'], frag_type)
+                if props:
+                    print(f"  Found database properties for {fragment['name']}")
+                    processed_fragment.update(props)
+            except Exception as e:
+                print(f"  Database error: {str(e)}")
+            
+            # If database properties not found or incomplete, use RDKit
+            if not props or not all(k in props for k in ['molecular_weight', 'h_bond_donor_count', 'h_bond_acceptor_count']):
+                print(f"  No complete database properties for {fragment['name']}, using RDKit...")
+                if 'smiles' in fragment:
+                    print(f"  Found SMILES for {fragment['name']}: {fragment['smiles']}")
+                    # You can add RDKit calculations here if needed
+                else:
+                    print(f"  Warning: No SMILES found for {fragment['name']}")
+            
             fragments_data[frag_type].append(processed_fragment)
             print(f"  Added to {frag_type} list")
     
@@ -77,9 +89,9 @@ def screen_fragments(fragments_data: Dict, density_range: tuple = (800, 2000), c
                 
                 # Estimate density based on molecular weight and heavy atoms
                 total_heavy_atoms = (
-                    cation['heavy_atoms'] +
-                    anion['heavy_atoms'] +
-                    alkyl['heavy_atoms']
+                    cation['heavy_atom_count'] +
+                    anion['heavy_atom_count'] +
+                    alkyl['heavy_atom_count']
                 )
                 # Rough density estimate: 20 g/mol per heavy atom
                 estimated_density = (total_mw / (total_heavy_atoms * 20.0)) * 1000  # Convert to kg/m³
@@ -87,9 +99,9 @@ def screen_fragments(fragments_data: Dict, density_range: tuple = (800, 2000), c
                 
                 # Estimate heat capacity based on molecular weight and rotatable bonds
                 total_rotatable_bonds = (
-                    cation['rotatable_bonds'] +
-                    anion['rotatable_bonds'] +
-                    alkyl['rotatable_bonds']
+                    cation['rotatable_bond_count'] +
+                    anion['rotatable_bond_count'] +
+                    alkyl['rotatable_bond_count']
                 )
                 # Rough heat capacity estimate: 2 J/mol·K per g/mol + 5 J/mol·K per rotatable bond
                 estimated_cp = 2 * total_mw + 5 * total_rotatable_bonds

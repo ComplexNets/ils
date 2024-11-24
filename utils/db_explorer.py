@@ -1,84 +1,59 @@
 #!/usr/bin/env python3
 import sys
 import os
+import pymysql
+from dotenv import load_dotenv
 
-# Get the current directory
-current_dir = os.path.dirname(os.path.abspath(__file__))
-
-# Import the utils module from the current directory
-sys.path.insert(0, current_dir)
-from .utils import connect_to_database
-
-def get_tables(cursor):
-    """Get all table names from the database"""
-    cursor.execute("SHOW TABLES")
-    return [table[0] for table in cursor.fetchall()]
-
-def get_table_structure(cursor, table_name):
-    """Get table structure"""
-    cursor.execute(f"DESCRIBE {table_name}")
-    columns = cursor.fetchall()
-    
-    print(f"\n=== {table_name} Structure ===")
-    print("Columns:")
-    for col in columns:
-        print(f"  - {col[0]}: {col[1]} ({col[2]}) {'PRIMARY KEY' if col[3] == 'PRI' else ''}")
-
-def explore_table(cursor, table_name):
-    """Explore table data"""
-    # Get table structure
-    get_table_structure(cursor, table_name)
-    
-    # Get all rows with all columns
-    cursor.execute(f"SELECT * FROM {table_name}")
-    rows = cursor.fetchall()
-    
-    # Get column names
-    cursor.execute(f"DESCRIBE {table_name}")
-    columns = [col[0] for col in cursor.fetchall()]
-    
-    print(f"\n=== {table_name} Data ===")
-    print(f"Found {len(rows)} rows")
-    
-    # Group by Type
-    data_by_type = {}
-    for row in rows:
-        row_dict = dict(zip(columns, row))
-        frag_type = row_dict.get('Type', 'Unknown')
-        if frag_type not in data_by_type:
-            data_by_type[frag_type] = []
-        data_by_type[frag_type].append(row_dict)
-    
-    # Print data by type
-    for frag_type, fragments in data_by_type.items():
-        print(f"\n{frag_type}s ({len(fragments)}):")
-        for frag in fragments:
-            print(f"  - {frag['Name']}:")
-            for col, val in frag.items():
-                if col != 'Name':
-                    print(f"    {col}: {val}")
-
-def main():
-    """Main function to explore database tables"""
-    conn, cursor = connect_to_database()
-    if not conn:
-        print("Failed to connect to database")
-        return
-        
+def explore_database():
+    """Explore the database structure"""
     try:
-        # Get all tables
-        tables = get_tables(cursor)
-        print("\nFound tables:", tables)
+        # Load environment variables
+        load_dotenv()
         
-        # Explore each table
-        for table in tables:
-            explore_table(cursor, table)
+        # Database connection parameters
+        db_params = {
+            'host': os.getenv('DB_HOST'),
+            'user': os.getenv('DB_USER'),
+            'password': os.getenv('DB_PASSWORD'),
+            'db': os.getenv('DB_NAME'),
+            'charset': 'utf8mb4',
+            'cursorclass': pymysql.cursors.DictCursor
+        }
+        
+        # Connect to database
+        connection = pymysql.connect(**db_params)
+        cursor = connection.cursor()
+        
+        try:
+            # Get all tables
+            cursor.execute("SHOW TABLES")
+            tables = cursor.fetchall()
+            print("\nTables in database:")
+            for table in tables:
+                table_name = list(table.values())[0]  # Get the table name from the dict
+                print(f"\n=== Table: {table_name} ===")
+                
+                # Get columns for each table
+                cursor.execute(f"DESCRIBE {table_name}")
+                columns = cursor.fetchall()
+                print("Columns:")
+                for col in columns:
+                    print(f"  {col['Field']}: {col['Type']}")
+                    
+                # Get sample data
+                cursor.execute(f"SELECT * FROM {table_name} LIMIT 1")
+                sample = cursor.fetchone()
+                if sample:
+                    print("\nSample row:")
+                    for key, value in sample.items():
+                        print(f"  {key}: {value}")
+                        
+        finally:
+            cursor.close()
+            connection.close()
             
     except Exception as e:
-        print(f"Error exploring database: {e}")
-    finally:
-        if conn:
-            conn.close()
+        print(f"Error exploring database: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    explore_database()

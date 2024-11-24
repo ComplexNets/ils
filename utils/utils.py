@@ -20,20 +20,28 @@ __all__ = ['standardize_il_name', 'generate_il_name', 'get_molecular_weight', 'g
 
 def connect_to_database():
     """Connect to MySQL database using environment variables"""
-    load_dotenv()
-    
     try:
-        connection = pymysql.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_NAME')
-        )
+        # Load environment variables
+        load_dotenv()
+        
+        # Database connection parameters
+        db_params = {
+            'host': os.getenv('DB_HOST'),
+            'user': os.getenv('DB_USER'),
+            'password': os.getenv('DB_PASSWORD'),
+            'db': os.getenv('DB_NAME'),
+            'charset': 'utf8mb4',
+            'cursorclass': pymysql.cursors.DictCursor  # Use DictCursor to return results as dictionaries
+        }
+        
+        # Connect to database
+        connection = pymysql.connect(**db_params)
         cursor = connection.cursor()
+        
         return connection, cursor
         
-    except pymysql.Error as e:
-        print(f"Error connecting to MySQL database: {e}")
+    except Exception as e:
+        print(f"Database connection error: {str(e)}")
         return None, None
 
 def standardize_il_name(name: str) -> str:
@@ -126,12 +134,12 @@ def get_molecular_weight(fragment_name: str, fragment_type: str) -> float:
         fragment_name = standardize_il_name(fragment_name)
         
         # Query the IonicLiquids table
-        query = "SELECT MolecularWeight FROM IonicLiquids WHERE Name = %s AND Type = %s"
+        query = "SELECT molecular_weight FROM IonicLiquids WHERE name = %s AND type = %s"
         cursor.execute(query, (fragment_name, fragment_type))
         result = cursor.fetchone()
         
-        if result and result[0]:
-            return float(result[0])
+        if result and result['molecular_weight']:
+            return float(result['molecular_weight'])
         return 0.0
         
     except Exception as e:
@@ -143,91 +151,92 @@ def get_molecular_weight(fragment_name: str, fragment_type: str) -> float:
 
 def get_fragment_properties(fragment_name: str, fragment_type: str) -> Optional[Dict]:
     """
-    Get fragment properties from database, falling back to RDKit if not found
-    Args:
-        fragment_name: Name of the fragment
-        fragment_type: Type of fragment (cation, anion, or alkyl_chain)
-    Returns:
-        Dictionary of properties or None if not found
+    Get fragment properties from database, return None if not found or error occurs
     """
-    # First try database
-    props = get_db_properties(fragment_name, fragment_type)
-    if props and all(props.get(key) is not None for key in ['molecular_weight', 'heavy_atoms']):
-        print(f"Found complete database properties for {fragment_name}")
-        return props
-        
-    print(f"No complete database properties for {fragment_name}, trying RDKit...")
-    
-    # Try RDKit
-    # Get SMILES for the fragment
-    smiles = None
-    fragment_name_lower = fragment_name.lower()
-    fragment_type_lower = fragment_type.lower()
-    
-    for frag in fragments:
-        if (frag['name'].lower() == fragment_name_lower and 
-            frag['fragment_type'].lower() == fragment_type_lower):
-            smiles = frag['smiles']
-            print(f"Found SMILES for {fragment_name}: {smiles}")
-            break
-    
-    if not smiles:
-        print(f"No SMILES found for {fragment_name}")
-        return None
-        
-    # Get RDKit properties
-    rdkit_props = get_rdkit_properties(smiles)
-    if not rdkit_props:
-        print(f"Failed to calculate RDKit properties for {fragment_name}")
-        return None
-        
-    # If we have partial database properties, merge them with RDKit properties
-    if props:
-        rdkit_props.update(props)
-        print(f"Merged database and RDKit properties for {fragment_name}")
-    
-    return rdkit_props
-
-def get_db_properties(fragment_name: str, fragment_type: str) -> Optional[Dict]:
-    """Get fragment properties from database"""
     try:
         # Connect to database
-        connection, cursor = connect_to_database()
-        if not connection or not cursor:
+        conn, cursor = connect_to_database()
+        if not conn:
             return None
             
-        try:
-            # Get properties from database
-            sql = """
-                SELECT 
-                    MolecularWeight, HeavyAtomCount, RotatableBondCount,
-                    HydrogenBondDonorCount, HydrogenBondAcceptorCount,
-                    Charge, SMILES
-                FROM Fragments
-                WHERE LOWER(Name) = LOWER(%s) AND LOWER(Type) = LOWER(%s)
-            """
-            cursor.execute(sql, (fragment_name, fragment_type))
-            result = cursor.fetchone()
-            
-            if result:
-                return {
-                    'molecular_weight': float(result[0]) if result[0] is not None else None,
-                    'heavy_atoms': int(result[1]) if result[1] is not None else None,
-                    'rotatable_bonds': int(result[2]) if result[2] is not None else None,
-                    'h_bond_donors': int(result[3]) if result[3] is not None else None,
-                    'h_bond_acceptors': int(result[4]) if result[4] is not None else None,
-                    'charge': int(result[5]) if result[5] is not None else None,
-                    'smiles': result[6]
-                }
-                
-        finally:
-            cursor.close()
-            connection.close()
-            
-    except Exception as e:
-        print(f"Database error: {e}")
+        # Query for properties with case-insensitive type matching
+        sql = """
+            SELECT molecular_weight, density, specific_heat_capacity,
+                   hydrogen_bond_donor_count, hydrogen_bond_acceptor_count,
+                   rotatable_bond_count, charge, heavy_atom_count,
+                   tpsa, smiles
+            FROM IonicLiquids
+            WHERE name = %s AND LOWER(type) = LOWER(%s)
+        """
         
-    return None
+        cursor.execute(sql, (fragment_name, fragment_type))
+        result = cursor.fetchone()
+        
+        if result:
+            # Convert numeric values to their proper types
+            props = {
+                'molecular_weight': float(result['molecular_weight']) if result['molecular_weight'] else 0.0,
+                'density': float(result['density']) if result['density'] else None,
+                'specific_heat_capacity': float(result['specific_heat_capacity']) if result['specific_heat_capacity'] else None,
+                'hydrogen_bond_donor_count': int(result['hydrogen_bond_donor_count']) if result['hydrogen_bond_donor_count'] else 0,
+                'hydrogen_bond_acceptor_count': int(result['hydrogen_bond_acceptor_count']) if result['hydrogen_bond_acceptor_count'] else 0,
+                'rotatable_bond_count': int(result['rotatable_bond_count']) if result['rotatable_bond_count'] else 0,
+                'charge': int(result['charge']) if result['charge'] else 0,
+                'heavy_atom_count': int(result['heavy_atom_count']) if result['heavy_atom_count'] else 0,
+                'topological_polar_surface_area': float(result['tpsa']) if result['tpsa'] else 0.0,
+                'smiles': result['smiles']
+            }
+            return props
+        
+        # If not in database, try to find SMILES in fragments data
+        matching_fragments = [f for f in fragments if f['fragment_type'] == fragment_type and f['name'] == fragment_name]
+        if matching_fragments:
+            frag = matching_fragments[0]
+            print(f"  No database entry for {fragment_name}, calculating with RDKit...")
+            return get_rdkit_properties(frag['smiles'])
+            
+        print(f"  No properties found for {fragment_name}")
+        return None
+        
+    except Exception as e:
+        print(f"Database error: {str(e)}")
+        return None
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+def get_db_properties(cursor, name):
+    """Get properties from database for a given fragment"""
+    try:
+        # Using the new snake_case column names
+        query = """
+        SELECT name, smiles, type, molecular_weight, density, 
+               specific_heat_capacity, toxicity_rating, ld50
+        FROM IonicLiquids 
+        WHERE name = %s
+        """
+        cursor.execute(query, (name,))
+        result = cursor.fetchone()
+        
+        if result:
+            # Convert numeric values to float where applicable
+            return {
+                'name': result['name'],
+                'smiles': result['smiles'],
+                'type': result['type'],
+                'molecular_weight': float(result['molecular_weight']) if result['molecular_weight'] else None,
+                'density': float(result['density']) if result['density'] else None,
+                'specific_heat_capacity': float(result['specific_heat_capacity']) if result['specific_heat_capacity'] else None,
+                'toxicity_rating': result['toxicity_rating'],
+                'ld50': result['ld50']
+            }
+        return None
+        
+    except Exception as e:
+        print(f"Database error: {str(e)}")
+        return None
 
 def is_in_il_thermo(il_name):
     """Check if ionic liquid exists in IL Thermo database."""

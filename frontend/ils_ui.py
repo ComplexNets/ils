@@ -7,8 +7,9 @@ import plotly.graph_objects as go
 from core.combine_fragments import combine_fragments
 from core.heat_capacity import calculate_ionic_liquid_heat_capacity
 from core.density import calculate_ionic_liquid_density
+from core.toxicity import calculate_ionic_liquid_toxicity
 from core.pareto_optimizer import ParetoOptimizer
-from frontend.property_input import PropertyRanges
+from frontend.property_input import PropertyRanges, PropertyCriteria
 import pandas as pd
 
 # Initialize session state
@@ -64,11 +65,49 @@ def get_user_ranges():
     )
     cp_strict = st.sidebar.checkbox("Strict Heat Capacity Constraint", value=False)
     
+    # Toxicity range (IC50 in mM)
+    st.sidebar.subheader("Toxicity (IC50 in mM)")
+    toxicity_min = st.sidebar.number_input(
+        "Minimum IC50",
+        value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[0],
+        step=0.1,
+        format="%.1f"
+    )
+    toxicity_max = st.sidebar.number_input(
+        "Maximum IC50",
+        value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[1],
+        step=0.1,
+        format="%.1f"
+    )
+    toxicity_importance = st.sidebar.slider(
+        "Toxicity Importance",
+        min_value=1,
+        max_value=5,
+        value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).importance
+    )
+    toxicity_strict = st.sidebar.checkbox("Strict Toxicity Constraint", value=False)
+    
     # Update property ranges
-    prop_ranges.properties['density'].range = (density_min, density_max)
-    prop_ranges.properties['density'].importance = density_importance
-    prop_ranges.properties['heat_capacity'].range = (cp_min, cp_max)
-    prop_ranges.properties['heat_capacity'].importance = cp_importance
+    prop_ranges.update_property(
+        'density',
+        (density_min, density_max),
+        weight=density_importance/5.0,
+        is_strict=density_strict
+    )
+    
+    prop_ranges.update_property(
+        'heat_capacity',
+        (cp_min, cp_max),
+        weight=cp_importance/5.0,
+        is_strict=cp_strict
+    )
+    
+    prop_ranges.update_property(
+        'toxicity',
+        (toxicity_min, toxicity_max),
+        weight=toxicity_importance/5.0,
+        is_strict=toxicity_strict
+    )
     
     # Update optimizer constraints
     optimizer.set_constraint(
@@ -80,6 +119,11 @@ def get_user_ranges():
         "heat_capacity", cp_min, cp_max,
         weight=cp_importance/5.0,
         is_strict=cp_strict
+    )
+    optimizer.set_constraint(
+        "toxicity", toxicity_min, toxicity_max,
+        weight=toxicity_importance/5.0,
+        is_strict=toxicity_strict
     )
     
     return prop_ranges
@@ -97,23 +141,28 @@ def calculate_properties():
     # Calculate properties for each combination
     valid_combinations = []
     for combo in combinations:
-        # Calculate density and heat capacity using detailed methods
+        # Calculate density, heat capacity, and toxicity using detailed methods
         density = calculate_ionic_liquid_density(combo)
         heat_capacity = calculate_ionic_liquid_heat_capacity(combo)
+        toxicity_result = calculate_ionic_liquid_toxicity(combo)
         
         # Check if properties are within user-defined ranges
-        if density is not None and heat_capacity is not None:
+        if density is not None and heat_capacity is not None and toxicity_result is not None:
             density_range = prop_ranges.properties['density'].range
             cp_range = prop_ranges.properties['heat_capacity'].range
+            toxicity_range = prop_ranges.properties['toxicity'].range
+            
+            toxicity_ic50 = toxicity_result['ic50_mm']
             
             if (density_range[0] <= density <= density_range[1] and
-                cp_range[0] <= heat_capacity <= cp_range[1]):
-                # Generate IL name for ILThermo check
-                il_name = combo.get('name', '')
+                cp_range[0] <= heat_capacity <= cp_range[1] and
+                toxicity_range[0] <= toxicity_ic50 <= toxicity_range[1]):
+                
                 combo.update({
                     'density': density,
                     'heat_capacity': heat_capacity,
-                    'in_ilthermo': False  # Default to False if not found
+                    'toxicity': toxicity_ic50,
+                    'toxicity_components': toxicity_result['components']
                 })
                 valid_combinations.append(combo)
     
@@ -221,6 +270,17 @@ def plot_property_distribution(combinations):
         )
     )
     
+    # Toxicity Distribution
+    fig.add_trace(
+        go.Histogram(
+            x=[sol['toxicity'] for sol in combinations],
+            name="Toxicity",
+            nbinsx=30,
+            marker_color='green',
+            opacity=0.6
+        )
+    )
+    
     fig.update_layout(
         title="Property Distributions",
         xaxis_title="Value",
@@ -306,6 +366,7 @@ def display_results():
                             'Name': sol['name'],
                             'Heat Capacity (J/mol·K)': f"{sol['heat_capacity']:.1f}",
                             'Density (kg/m³)': f"{sol['density']:.1f}",
+                            'Toxicity (IC50 in mM)': f"{sol['toxicity']:.1f}",
                             'Pareto Score': f"{sol.get('pareto_score', 0):.3f}",
                             'In ILThermo': '✓' if sol.get('in_ilthermo', False) else '✗'
                         })
@@ -332,6 +393,7 @@ def display_results():
                         'Name': sol['name'],
                         'Heat_Capacity': sol['heat_capacity'],
                         'Density': sol['density'],
+                        'Toxicity': sol['toxicity'],
                         'Pareto_Score': sol.get('pareto_score', 0),
                         'In_ILThermo': sol.get('in_ilthermo', False)
                     })

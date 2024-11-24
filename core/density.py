@@ -2,9 +2,10 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from models.shortList_frag import fragments
 from utils.utils import get_fragment_properties
+from core.combine_fragments import get_filtered_fragments, combine_fragments
 
 # Group contribution parameters for density calculation
 group_params = {
@@ -33,11 +34,11 @@ def calculate_molecular_volume(fragment: Dict) -> Optional[float]:
             return None
             
         # Get required properties
-        heavy_atoms = props['heavy_atoms']
+        heavy_atoms = props['heavy_atom_count']
         mw = props['molecular_weight']
-        rotatable_bonds = props['rotatable_bonds']
-        h_donors = props['h_bond_donors']
-        h_acceptors = props['h_bond_acceptors']
+        rotatable_bonds = props['rotatable_bond_count']
+        h_donors = props['hydrogen_bond_donor_count']
+        h_acceptors = props['hydrogen_bond_acceptor_count']
         
         if not all([heavy_atoms, mw]):
             print(f"  Missing required properties for {fragment['name']}")
@@ -52,13 +53,15 @@ def calculate_molecular_volume(fragment: Dict) -> Optional[float]:
         # With 13 heavy atoms total, that's about 12.3 cm³/mol per heavy atom
         base_per_heavy_atom = 12.3  # cm³/mol per heavy atom
         
-        if fragment['fragment_type'] == 'Cation':
+        fragment_type = fragment['fragment_type'].lower()
+        
+        if fragment_type == 'cation':
             # Imidazolium and similar cations
             base_volume = heavy_atoms * base_per_heavy_atom
             charge_factor = 0.95  # Cations are more compact
             flexibility_factor = 1.0 + (0.005 * rotatable_bonds)  # Reduced impact
             
-        elif fragment['fragment_type'] == 'Anion':
+        elif fragment_type == 'anion':
             # Common IL anions
             base_volume = heavy_atoms * base_per_heavy_atom
             charge_factor = 1.05  # Anions slightly more diffuse
@@ -68,11 +71,15 @@ def calculate_molecular_volume(fragment: Dict) -> Optional[float]:
             if 'fluor' in fragment['name'].lower():
                 base_volume *= 1.02  # Slightly larger
                 
-        else:  # Alkyl Chain
+        elif fragment_type == 'alkyl_chain':
             # Regular organic groups
             base_volume = heavy_atoms * base_per_heavy_atom
             charge_factor = 1.0
             flexibility_factor = 1.0 + (0.008 * rotatable_bonds)  # Reduced impact
+            
+        else:
+            print(f"  Unknown fragment type: {fragment['fragment_type']}")
+            return None
             
         # Molecular weight correction
         # Heavier atoms generally take more space
@@ -199,10 +206,10 @@ def calculate_ionic_liquid_density(ionic_liquid: Dict) -> Optional[float]:
         packing_factor = 0.98 - (0.01 * charge_interaction)
         
         # H-bonding also affects packing
-        cation_h_donors = int(ionic_liquid['cation'].get('h_bond_donors', 0))
-        cation_h_acceptors = int(ionic_liquid['cation'].get('h_bond_acceptors', 0))
-        anion_h_donors = int(ionic_liquid['anion'].get('h_bond_donors', 0))
-        anion_h_acceptors = int(ionic_liquid['anion'].get('h_bond_acceptors', 0))
+        cation_h_donors = int(ionic_liquid['cation'].get('hydrogen_bond_donor_count', 0))
+        cation_h_acceptors = int(ionic_liquid['cation'].get('hydrogen_bond_acceptor_count', 0))
+        anion_h_donors = int(ionic_liquid['anion'].get('hydrogen_bond_donor_count', 0))
+        anion_h_acceptors = int(ionic_liquid['anion'].get('hydrogen_bond_acceptor_count', 0))
         
         h_bond_pairs = min(cation_h_donors, anion_h_acceptors) + min(anion_h_donors, cation_h_acceptors)
         h_bond_factor = 1.0 - (0.005 * h_bond_pairs)
@@ -228,110 +235,71 @@ def calculate_ionic_liquid_density(ionic_liquid: Dict) -> Optional[float]:
         print(f"Error calculating ionic liquid density: {e}")
         return None
 
-def screen_fragments_by_density(fragments: List[Dict], target_range: tuple) -> Dict[str, List[Dict]]:
+def screen_fragments_by_density(fragments_data: Dict[str, List[Dict]], target_range: Tuple[float, float]) -> Dict[str, List[Dict]]:
     """
     Screen fragments based on estimated density
-    Returns dictionary of fragments organized by type that meet the target range
+    Args:
+        fragments_data: Dictionary of fragments organized by type (cation, anion, alkyl_chain)
+        target_range: Tuple of (min_density, max_density) in kg/m³
+    Returns:
+        Dictionary of fragments organized by type that meet the target range
     """
     min_density, max_density = target_range
     
-    # Initialize dictionary for organized fragments
-    fragments_data = {
-        'cation': [],
-        'anion': [],
-        'alkyl_chain': []
-    }
+    # Initialize output dictionary with same structure as input
+    screened_fragments = {frag_type: [] for frag_type in fragments_data.keys()}
     
-    print("\nScreening fragments by density...")
-    
-    for fragment in fragments:
-        frag_type = fragment['fragment_type']
-        if frag_type in fragments_data:
+    for frag_type, fragments in fragments_data.items():
+        for fragment in fragments:
             estimated_density = estimate_fragment_density(fragment)
             
             if estimated_density is not None:
-                # Check if estimated density contributes to target range
-                # Use wider range for screening since this is just one component
-                if min_density * 0.7 <= estimated_density <= max_density * 1.3:
-                    fragments_data[frag_type].append({
-                        'name': fragment['name'],
-                        'smiles': fragment['smiles'],
-                        'density': estimated_density,
-                        'fragment_type': frag_type
+                # Use configurable margin for screening
+                margin = 0.3  # Can be adjusted or passed as parameter
+                if min_density * (1 - margin) <= estimated_density <= max_density * (1 + margin):
+                    screened_fragments[frag_type].append({
+                        **fragment,  # Preserve all original properties
+                        'estimated_density': estimated_density
                     })
     
-    return fragments_data
+    return screened_fragments
 
-def test_density_calculations():
-    """Test function to show detailed density calculations"""
-    print("\nTesting with fragments from shortList_frag.py...")
+def test_density_calculations(fragments_data: Optional[Dict[str, List[Dict]]] = None, 
+                            combinations: Optional[List[Dict]] = None,
+                            num_test_combinations: int = 3):
+    """
+    Test function to show detailed density calculations
+    Args:
+        fragments_data: Optional dictionary of fragments to test screening
+        combinations: Optional list of ionic liquid combinations to test
+        num_test_combinations: Number of combinations to test
+    """
+    print("\n=== Testing Density Calculations ===")
     
-    test_il = {
-        'cation': {
-            'name': 'Ethylimidazolium',
-            'fragment_type': 'cation',
-            'molecular_weight': 111.2,
-            'h_bond_donors': 1,
-            'h_bond_acceptors': 2
-        },
-        'anion': {
-            'name': 'Tetrafluoroborate',
-            'fragment_type': 'anion',
-            'molecular_weight': 86.8,
-            'h_bond_donors': 0,
-            'h_bond_acceptors': 4
-        },
-        'alkyl': {
-            'name': 'Ethyl',
-            'fragment_type': 'alkyl_chain',
-            'molecular_weight': 29.1,
-            'h_bond_donors': 0,
-            'h_bond_acceptors': 0
-        }
-    }
+    if combinations:
+        # Test provided combinations
+        for i, il in enumerate(combinations[:num_test_combinations]):
+            print(f"\nTesting combination {i+1}:")
+            print(f"Cation: {il['cation']['name']}")
+            print(f"Anion: {il['anion']['name']}")
+            if 'alkyl_chain' in il:
+                print(f"Alkyl chain: {il['alkyl_chain']['name']}")
+                
+            density = calculate_ionic_liquid_density(il)
+            if density is not None:
+                print(f"Calculated density: {density:.2f} kg/m³")
     
-    print("\nTest Ionic Liquid:")
-    print(f"Cation: {test_il['cation']['name']}")
-    print(f"Anion: {test_il['anion']['name']}")
-    print(f"Alkyl: {test_il['alkyl']['name']}\n")
-    
-    # Calculate individual contributions
-    print("Cation contribution:")
-    print(f"  - Molecular Weight: {test_il['cation']['molecular_weight']} g/mol")
-    cation_volume = calculate_molecular_volume(test_il['cation'])
-    if cation_volume:
-        print(f"  - Molecular Volume: {cation_volume:.1f} cm³/mol\n")
-    else:
-        print("  - Error: Could not calculate molecular volume\n")
-    
-    print("Anion contribution:")
-    print(f"  - Molecular Weight: {test_il['anion']['molecular_weight']} g/mol")
-    anion_volume = calculate_molecular_volume(test_il['anion'])
-    if anion_volume:
-        print(f"  - Molecular Volume: {anion_volume:.1f} cm³/mol\n")
-    else:
-        print("  - Error: Could not calculate molecular volume\n")
-    
-    print("Alkyl contribution:")
-    print(f"  - Molecular Weight: {test_il['alkyl']['molecular_weight']} g/mol")
-    alkyl_volume = calculate_molecular_volume(test_il['alkyl'])
-    if alkyl_volume:
-        print(f"  - Molecular Volume: {alkyl_volume:.1f} cm³/mol\n")
-    else:
-        print("  - Error: Could not calculate molecular volume\n")
-    
-    print("Calculating density for Ethylimidazolium Tetrafluoroborate with Ethyl:")
-    density = calculate_ionic_liquid_density(test_il)
-    
-    print("\nComponent volumes:")
-    print(f"  - Cation: {f'{cation_volume:.1f}' if cation_volume is not None else 'None'} cm³/mol")
-    print(f"  - Anion: {f'{anion_volume:.1f}' if anion_volume is not None else 'None'} cm³/mol")
-    print(f"  - Alkyl: {f'{alkyl_volume:.1f}' if alkyl_volume is not None else 'None'} cm³/mol")
-    
-    if density is not None:
-        print(f"\nFinal Ionic Liquid Density: {density:.1f} kg/m³")
-    else:
-        print("\nError: Could not calculate final density")
+    if fragments_data:
+        # Test fragment screening
+        print("\nTesting fragment screening:")
+        target_range = (800, 2000)  # kg/m³, can be parameterized
+        screened = screen_fragments_by_density(fragments_data, target_range)
+        
+        for frag_type, fragments in screened.items():
+            if fragments:  # Only print if there are fragments that passed screening
+                print(f"\n{frag_type.capitalize()} fragments within density range {target_range}:")
+                for frag in fragments:
+                    print(f"  {frag['name']}: {frag['estimated_density']:.2f} kg/m³")
 
 if __name__ == "__main__":
     print("\n=== Density Calculation Module Test ===")

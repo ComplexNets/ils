@@ -26,25 +26,18 @@ def get_rdkit_properties(smiles: str) -> Optional[Dict]:
         except:
             print("Warning: 3D coordinate generation failed, some properties may be approximate")
         
-        # Calculate properties
+        # Calculate properties with standardized names and types
         props = {
-            'molecular_weight': Descriptors.ExactMolWt(mol),
-            'heavy_atoms': mol.GetNumHeavyAtoms(),
-            'rotatable_bonds': Descriptors.NumRotatableBonds(mol),
-            'h_bond_donors': Descriptors.NumHDonors(mol),  # Changed from NumHBD
-            'h_bond_acceptors': Descriptors.NumHAcceptors(mol),  # Changed from NumHBA
-            'charge': Chem.GetFormalCharge(mol),
-            'aromatic_rings': Descriptors.NumAromaticRings(mol),
-            'topological_polar_surface_area': Descriptors.TPSA(mol),
-            'smiles': Chem.MolToSmiles(mol)  # Add canonical SMILES
+            'molecular_weight': float(Descriptors.ExactMolWt(mol)),
+            'heavy_atom_count': int(mol.GetNumHeavyAtoms()),
+            'rotatable_bond_count': int(Descriptors.NumRotatableBonds(mol)),
+            'hydrogen_bond_donor_count': int(Descriptors.NumHDonors(mol)),
+            'hydrogen_bond_acceptor_count': int(Descriptors.NumHAcceptors(mol)),
+            'charge': int(Chem.GetFormalCharge(mol)),
+            'aromatic_ring_count': int(Descriptors.NumAromaticRings(mol)),
+            'topological_polar_surface_area': float(Descriptors.TPSA(mol)),
+            'smiles': Chem.MolToSmiles(mol)  # Canonical SMILES
         }
-        
-        # Try to compute volume if 3D coords are available
-        try:
-            props['volume'] = AllChem.ComputeMolVolume(mol)
-        except:
-            print("Warning: Volume calculation failed")
-            props['volume'] = None
         
         print(f"\nRDKit properties for {smiles}:")
         for prop, value in props.items():
