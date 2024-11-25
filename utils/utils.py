@@ -241,8 +241,9 @@ def get_db_properties(cursor, name):
 def is_in_il_thermo(il_name):
     """Check if ionic liquid exists in IL Thermo database."""
     base_url = "https://ilthermo.boulder.nist.gov/ILT2/ilsearch"
+    
+    # Standardize the name: ensure proper spacing and lowercase
     search_name = ' '.join(il_name.lower().split())
-    params = {'cmp': search_name, 'orderby': 'T', 'output': 'json'}
     
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -250,6 +251,7 @@ def is_in_il_thermo(il_name):
     }
     
     try:
+        params = {'cmp': search_name, 'orderby': 'T', 'output': 'json'}
         response = requests.get(base_url, params=params, headers=headers)
         response.raise_for_status()
         
@@ -259,14 +261,13 @@ def is_in_il_thermo(il_name):
         # Check if we got any results
         if 'res' in data and data['res']:
             return True
-        else:
-            return False
+        return False
             
     except requests.RequestException as e:
-        print(f"Error accessing IL Thermo: {e}")
+        print(f"Error accessing IL Thermo for {search_name}: {e}")
         return False
     except ValueError as e:
-        print(f"Error parsing response: {e}")
+        print(f"Error parsing response for {search_name}: {e}")
         return False
 
 if __name__ == "__main__":
