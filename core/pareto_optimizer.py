@@ -12,39 +12,36 @@ class PropertyConstraint:
     max_value: float
     weight: float  # Importance weight (0-1)
     is_strict: bool  # If True, solutions must be within range
+    inverse: bool = False  # If True, higher values are better (like IC50)
 
 class ParetoOptimizer:
     def __init__(self):
-        self.properties = {
-            'heat_capacity': PropertyConstraint(
-                min_value=200,
-                max_value=400,
-                weight=0.5,
-                is_strict=False
-            ),
-            'density': PropertyConstraint(
-                min_value=800,
-                max_value=1500,
-                weight=0.5,
-                is_strict=False
-            )
-        }
+        # Initialize with empty properties dict - constraints will be set via set_constraint
+        self.properties = {}
         
     def set_constraint(self, property_name: str, min_val: float, max_val: float, 
-                      weight: float, is_strict: bool = False):
+                      weight: float, is_strict: bool = False, inverse: bool = False):
         """Update constraints for a specific property"""
-        if property_name in self.properties:
-            self.properties[property_name] = PropertyConstraint(
-                min_value=min_val,
-                max_value=max_val,
-                weight=weight,
-                is_strict=is_strict
-            )
+        self.properties[property_name] = PropertyConstraint(
+            min_value=min_val,
+            max_value=max_val,
+            weight=weight,
+            is_strict=is_strict,
+            inverse=inverse
+        )
 
     def _normalize_property(self, value: float, prop_constraint: PropertyConstraint) -> float:
         """Normalize property value to [0,1] range"""
         range_width = prop_constraint.max_value - prop_constraint.min_value
+        if range_width == 0:
+            return 0.0
+            
         normalized = (value - prop_constraint.min_value) / range_width
+        
+        # For inverse properties (like toxicity IC50), invert the normalized value
+        if prop_constraint.inverse:
+            normalized = 1.0 - normalized
+            
         return max(0.0, min(1.0, normalized))
 
     def _calculate_dominance(self, solution1: Dict, solution2: Dict) -> bool:

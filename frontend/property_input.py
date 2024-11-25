@@ -14,12 +14,12 @@ class PropertyRanges:
     def __init__(self):
         self.properties = {
             'heat_capacity': PropertyCriteria(
-                range=(0, 8000),
+                range=(200, 600),  # More realistic default range
                 importance=3,
                 unit="J/mol·K"
             ),
             'density': PropertyCriteria(
-                range=(0, 8000),
+                range=(800, 1500),  # More realistic default range
                 importance=3,
                 unit="kg/m³"
             ),
