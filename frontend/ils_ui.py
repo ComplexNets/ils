@@ -11,6 +11,8 @@ from core.toxicity import calculate_ionic_liquid_toxicity
 from core.pareto_optimizer import ParetoOptimizer
 from frontend.property_input import PropertyRanges, PropertyCriteria
 import pandas as pd
+import numpy as np
+import math
 
 # Initialize session state
 if 'property_ranges' not in st.session_state:
@@ -110,138 +112,293 @@ def get_user_ranges():
     )
     
     # Update optimizer constraints
-    optimizer.set_constraint(
-        "density", density_min, density_max,
-        weight=density_importance/5.0,
-        is_strict=density_strict
-    )
-    optimizer.set_constraint(
-        "heat_capacity", cp_min, cp_max,
-        weight=cp_importance/5.0,
-        is_strict=cp_strict
-    )
-    optimizer.set_constraint(
-        "toxicity", toxicity_min, toxicity_max,
-        weight=toxicity_importance/5.0,
-        is_strict=toxicity_strict
-    )
+    optimizer.set_constraint('density', density_min, density_max, 
+                           density_importance/5.0, density_strict)
+    optimizer.set_constraint('heat_capacity', cp_min, cp_max,
+                           cp_importance/5.0, cp_strict)
+    optimizer.set_constraint('toxicity', toxicity_min, toxicity_max,
+                           toxicity_importance/5.0, toxicity_strict, inverse=True)
     
     return prop_ranges
 
 def calculate_properties():
-    """Get valid combinations and calculate their properties"""
-    # Get user-defined ranges
-    prop_ranges = st.session_state.property_ranges
-    
-    # First get valid combinations from validation rules
-    combinations = combine_fragments()
-    if not combinations:
-        return []
-        
-    # Calculate properties for each combination
-    valid_combinations = []
-    for combo in combinations:
-        # Calculate density, heat capacity, and toxicity using detailed methods
-        density = calculate_ionic_liquid_density(combo)
-        heat_capacity = calculate_ionic_liquid_heat_capacity(combo)
-        toxicity_result = calculate_ionic_liquid_toxicity(combo)
-        
-        # Check if properties are within user-defined ranges
-        if density is not None and heat_capacity is not None and toxicity_result is not None:
-            density_range = prop_ranges.properties['density'].range
-            cp_range = prop_ranges.properties['heat_capacity'].range
-            toxicity_range = prop_ranges.properties['toxicity'].range
+    """Calculate properties for all valid combinations"""
+    try:
+        combinations = combine_fragments()
+        if not combinations:
+            st.error("No valid combinations found!")
+            return
             
-            toxicity_ic50 = toxicity_result['ic50_mm']
-            
-            if (density_range[0] <= density <= density_range[1] and
-                cp_range[0] <= heat_capacity <= cp_range[1] and
-                toxicity_range[0] <= toxicity_ic50 <= toxicity_range[1]):
+        # Calculate properties for each combination
+        for combo in combinations:
+            combo['heat_capacity'] = calculate_ionic_liquid_heat_capacity(combo)
+            combo['density'] = calculate_ionic_liquid_density(combo)
+            toxicity_result = calculate_ionic_liquid_toxicity(combo)
+            if toxicity_result:
+                combo['toxicity'] = toxicity_result.get('ic50_mm', 0.0)
+            else:
+                combo['toxicity'] = 0.0
                 
-                combo.update({
-                    'density': density,
-                    'heat_capacity': heat_capacity,
-                    'toxicity': toxicity_ic50,
-                    'toxicity_components': toxicity_result['components']
-                })
-                valid_combinations.append(combo)
-    
-    return valid_combinations
+        # Get Pareto front
+        optimizer = st.session_state.optimizer
+        
+        # Set up property constraints
+        prop_ranges = st.session_state.property_ranges
+        
+        # Update optimizer with current property ranges and weights
+        for prop_name, criteria in prop_ranges.properties.items():
+            is_inverse = prop_name == 'toxicity'  # Higher IC50 is better for toxicity
+            optimizer.set_constraint(
+                prop_name,
+                criteria.range[0],
+                criteria.range[1],
+                criteria.importance / 5.0,  # Convert 1-5 scale to 0-1
+                is_strict=False,
+                inverse=is_inverse
+            )
+        
+        pareto_front = optimizer.get_pareto_front(combinations)
+        
+        # Calculate Pareto scores for all solutions
+        ranked_solutions = optimizer.rank_solutions(combinations)
+        for solution in combinations:
+            matching_ranked = next((s for s in ranked_solutions if s['name'] == solution['name']), None)
+            if matching_ranked:
+                solution['pareto_score'] = matching_ranked.get('pareto_score', 0.0)
+        
+        return combinations, pareto_front
+        
+    except Exception as e:
+        st.error(f"Error calculating properties: {str(e)}")
+        return None, None
 
 def plot_pareto_front(combinations, pareto_front, prop_ranges):
-    """Create Pareto front visualization"""
-    fig = go.Figure()
+    """Create Pareto front visualizations"""
+    st.subheader("Multi-Property Visualization")
     
-    # All solutions
-    fig.add_trace(go.Scatter(
-        x=[sol['heat_capacity'] for sol in combinations],
-        y=[sol['density'] for sol in combinations],
-        mode='markers',
-        name='All Solutions',
-        marker=dict(color='blue', size=8, opacity=0.5)
-    ))
+    # Helper function for normalization
+    def get_normalized_range(values):
+        min_val = min(values) if values else 0
+        max_val = max(values) if values else 1
+        # If all values are the same, add a small range
+        if min_val == max_val:
+            min_val = min_val - 0.5
+            max_val = max_val + 0.5
+        return min_val, max_val
     
-    # Pareto front
-    fig.add_trace(go.Scatter(
-        x=[sol['heat_capacity'] for sol in pareto_front],
-        y=[sol['density'] for sol in pareto_front],
-        mode='markers+lines',
-        name='Pareto Front',
-        marker=dict(color='red', size=10)
-    ))
+    # Create tabs for different visualization types
+    viz_tab1, viz_tab2 = st.tabs(["Parallel Coordinates", "Radar Plot"])
     
-    # Add property ranges
-    fig.add_shape(
-        type="rect",
-        x0=prop_ranges.properties['heat_capacity'].range[0],
-        x1=prop_ranges.properties['heat_capacity'].range[1],
-        y0=prop_ranges.properties['density'].range[0],
-        y1=prop_ranges.properties['density'].range[1],
-        line=dict(color="green", width=2),
-        fillcolor="green",
-        opacity=0.1
-    )
+    with viz_tab1:
+        # Parallel coordinates plot
+        fig_parallel = go.Figure()
+        
+        # Get global min/max for each property across all combinations
+        property_ranges = {}
+        for prop_name in prop_ranges.properties:
+            values = [c[prop_name] for c in combinations]
+            property_ranges[prop_name] = get_normalized_range(values)
+        
+        # Add non-Pareto solutions
+        non_pareto = [c for c in combinations if c not in pareto_front]
+        if non_pareto:
+            dims = []
+            for prop_name, prop in prop_ranges.properties.items():
+                values = [c[prop_name] for c in non_pareto]
+                min_val, max_val = property_ranges[prop_name]
+                
+                if prop_name == 'toxicity':
+                    # For toxicity (IC50), use log scale since values can span orders of magnitude
+                    # Higher IC50 = lower toxicity = better
+                    log_values = [math.log10(max(v, 0.1)) for v in values]  # Use 0.1 mM as minimum to avoid log(0)
+                    log_min = math.log10(0.1)  # 0.1 mM minimum
+                    log_max = math.log10(100)  # 100 mM maximum
+                    dims.append(dict(range=[log_min, log_max],
+                               label=f"{prop_name} (IC50, mM)",
+                               values=log_values,
+                               ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
+                               tickvals=list(range(int(log_min), int(log_max)+1))))
+                else:
+                    # Scale other properties normally
+                    scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
+                    dims.append(dict(range=[0, 1],
+                               label=f"{prop_name} ({prop.unit})",
+                               values=scaled_values))
+            
+            fig_parallel.add_trace(go.Parcoords(
+                line=dict(color='rgba(128,128,128,0.3)',
+                         colorscale=[[0, 'rgba(128,128,128,0.3)'], 
+                                   [1, 'rgba(128,128,128,0.3)']]),
+                dimensions=dims
+            ))
+        
+        # Add Pareto solutions
+        if pareto_front:
+            dims = []
+            for prop_name, prop in prop_ranges.properties.items():
+                values = [c[prop_name] for c in pareto_front]
+                min_val, max_val = property_ranges[prop_name]
+                
+                if prop_name == 'toxicity':
+                    # For toxicity (IC50), use log scale
+                    log_values = [math.log10(max(v, 0.1)) for v in values]
+                    log_min = math.log10(0.1)
+                    log_max = math.log10(100)
+                    dims.append(dict(range=[log_min, log_max],
+                               label=f"{prop_name} (IC50, mM)",
+                               values=log_values,
+                               ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
+                               tickvals=list(range(int(log_min), int(log_max)+1))))
+                else:
+                    # Scale other properties normally
+                    scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
+                    dims.append(dict(range=[0, 1],
+                               label=f"{prop_name} ({prop.unit})",
+                               values=scaled_values))
+            
+            fig_parallel.add_trace(go.Parcoords(
+                line=dict(color='rgba(255,0,0,1)',
+                         colorscale=[[0, 'rgba(255,0,0,1)'], 
+                                   [1, 'rgba(255,0,0,1)']]),
+                dimensions=dims
+            ))
+        
+        fig_parallel.update_layout(
+            title="Parallel Coordinates Plot of Properties",
+            height=600,
+            showlegend=True
+        )
+        st.plotly_chart(fig_parallel, use_container_width=True)
     
-    fig.update_layout(
-        title="Pareto Front of Ionic Liquid Properties",
-        xaxis_title="Heat Capacity (J/mol·K)",
-        yaxis_title="Density (kg/m³)",
-        showlegend=True
-    )
-    
-    return fig
+    with viz_tab2:
+        if not pareto_front:
+            st.write("No Pareto solutions available for visualization")
+            return
+            
+        num_solutions = min(5, len(pareto_front))
+        selected_indices = st.multiselect(
+            "Select solutions to compare (max 5)",
+            range(len(pareto_front)),
+            default=range(min(3, num_solutions)),
+            format_func=lambda x: f"Solution {x+1}: {pareto_front[x].get('name', f'Combination {x+1}')}"
+        )
+        
+        # Create figure container
+        fig_radar = go.Figure()
+        
+        # Get labels for the radar plot (do this once, outside the loop)
+        labels = []
+        for prop_name, prop in prop_ranges.properties.items():
+            if prop_name == 'toxicity':
+                labels.append(f"{prop_name}\n(IC50, mM)")
+            else:
+                labels.append(f"{prop_name}\n({prop.unit})")
+        
+        if selected_indices:
+            # Get global min/max for each property across all combinations
+            property_ranges = {}
+            for prop_name in prop_ranges.properties:
+                values = [c[prop_name] for c in combinations]
+                property_ranges[prop_name] = get_normalized_range(values)
+            
+            for idx in selected_indices:
+                solution = pareto_front[idx]
+                values = []
+                
+                for prop_name, prop in prop_ranges.properties.items():
+                    val = solution[prop_name]
+                    min_val, max_val = property_ranges[prop_name]
+                    
+                    if prop_name == 'toxicity':
+                        # For toxicity (IC50), use log scale normalization
+                        log_val = math.log10(max(val, 0.1))
+                        log_min = math.log10(0.1)
+                        log_max = math.log10(100)
+                        norm_val = (log_val - log_min) / (log_max - log_min)
+                    else:
+                        if min_val == max_val:
+                            norm_val = 1.0
+                        else:
+                            norm_val = (val - min_val) / (max_val - min_val)
+                    
+                    values.append(norm_val)
+                
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=values,
+                    theta=labels,
+                    name=solution.get('name', f'Solution {idx+1}'),
+                    fill='toself'
+                ))
+        else:
+            # Add an empty trace to keep the plot structure
+            fig_radar.add_trace(go.Scatterpolar(
+                r=[0] * len(labels),
+                theta=labels,
+                showlegend=False
+            ))
+        
+        # Always update layout
+        fig_radar.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0, 1], 
+                              ticktext=['0%', '25%', '50%', '75%', '100%'],
+                              tickvals=[0, 0.25, 0.5, 0.75, 1])
+            ),
+            showlegend=True,
+            title="Radar Plot of Selected Solutions"
+        )
+        st.plotly_chart(fig_radar, use_container_width=True)
 
 def plot_property_correlation(combinations):
-    """Create correlation plot between properties"""
-    fig = go.Figure()
+    """Create correlation matrix and SPLOM for properties"""
+    if not combinations:
+        return
+        
+    # Create correlation matrix
+    props = list(combinations[0].keys())
+    props = [p for p in props if p in ['heat_capacity', 'density', 'toxicity']]
     
-    # Create scatter plot with density coloring
-    fig.add_trace(go.Scatter(
-        x=[sol['heat_capacity'] for sol in combinations],
-        y=[sol['density'] for sol in combinations],
-        mode='markers',
-        marker=dict(
-            size=8,
-            color=[sol.get('pareto_score', 0) for sol in combinations],
-            colorscale='Viridis',
-            showscale=True,
-            colorbar=dict(title="Pareto Score")
-        ),
-        text=[sol['name'] for sol in combinations],
-        hovertemplate="<b>%{text}</b><br>" +
-                     "Heat Capacity: %{x:.1f} J/mol·K<br>" +
-                     "Density: %{y:.1f} kg/m³<br>" +
-                     "<extra></extra>"
+    corr_data = []
+    for p1 in props:
+        row = []
+        for p2 in props:
+            x = [c[p1] for c in combinations]
+            y = [c[p2] for c in combinations]
+            corr = np.corrcoef(x, y)[0, 1]
+            row.append(corr)
+        corr_data.append(row)
+    
+    fig_corr = go.Figure(data=go.Heatmap(
+        z=corr_data,
+        x=props,
+        y=props,
+        text=[[f"{val:.2f}" for val in row] for row in corr_data],
+        texttemplate="%{text}",
+        textfont={"size": 10},
+        hoverongaps=False,
+        colorscale="RdBu"
     ))
     
-    fig.update_layout(
-        title="Property Correlation with Pareto Scores",
-        xaxis_title="Heat Capacity (J/mol·K)",
-        yaxis_title="Density (kg/m³)",
-        showlegend=False
+    fig_corr.update_layout(
+        title="Property Correlation Matrix",
+        height=400
     )
     
-    return fig
+    # Create SPLOM
+    fig_splom = go.Figure(data=go.Splom(
+        dimensions=[dict(label=p, values=[c[p] for c in combinations]) for p in props],
+        showupperhalf=False,
+        diagonal_visible=False
+    ))
+    
+    fig_splom.update_layout(
+        title="Scatter Plot Matrix",
+        height=600
+    )
+    
+    # Display both plots
+    st.plotly_chart(fig_corr, use_container_width=True)
+    st.plotly_chart(fig_splom, use_container_width=True)
 
 def plot_property_distribution(combinations):
     """Create distribution plots for properties"""
@@ -303,14 +460,10 @@ def display_results():
     with st.spinner('Optimizing ionic liquids...'):
         try:
             # Calculate properties
-            combinations = calculate_properties()
+            combinations, pareto_front = calculate_properties()
             if not combinations:
                 st.warning("No valid ionic liquid combinations found.")
                 return
-            
-            # Get Pareto front and rankings
-            optimizer = st.session_state.optimizer
-            pareto_front, ranked_solutions = optimizer.optimize_combinations(combinations)
             
             # Create tabs for different visualizations
             tab1, tab2, tab3, tab4 = st.tabs([
@@ -323,12 +476,10 @@ def display_results():
             with tab1:
                 st.subheader("Property Distribution and Pareto Front")
                 fig_pareto = plot_pareto_front(combinations, pareto_front, st.session_state.property_ranges)
-                st.plotly_chart(fig_pareto, use_container_width=True)
             
             with tab2:
                 st.subheader("Property Correlation Analysis")
-                fig_corr = plot_property_correlation(combinations)
-                st.plotly_chart(fig_corr, use_container_width=True)
+                plot_property_correlation(combinations)
             
             with tab3:
                 st.subheader("Property Distributions")
@@ -353,7 +504,7 @@ def display_results():
                 
                 # Filter solutions
                 filtered_solutions = [
-                    sol for sol in ranked_solutions 
+                    sol for sol in pareto_front 
                     if sol.get('pareto_score', 0) >= min_score
                     and (not show_ilthermo or sol.get('in_ilthermo', False))
                 ]
@@ -388,7 +539,7 @@ def display_results():
             # Export results button
             if st.sidebar.button("Export Results"):
                 csv_data = []
-                for sol in ranked_solutions:
+                for sol in pareto_front:
                     csv_data.append({
                         'Name': sol['name'],
                         'Heat_Capacity': sol['heat_capacity'],
