@@ -1,9 +1,9 @@
 fragments = [
     # Cations (Common imidazolium, pyridinium, and ammonium cations)
-    {'name': 'Ethylimidazolium', 'smiles': 'CCn1cc[n+]c1', 'fragment_type': 'cation'},  # [EMIM]
-    {'name': 'Methylimidazolium', 'smiles': 'Cn1cc[n+]c1', 'fragment_type': 'cation'},  # [MIM]
-    {'name': 'Propylimidazolium', 'smiles': 'CCCn1cc[n+]c1', 'fragment_type': 'cation'},  # [PMIM]
-    {'name': '1-Ethylpyridinium', 'smiles': 'CC[n+]1ccccc1', 'fragment_type': 'cation'},  # [EPy]
+    {'name': 'Imidazolium', 'smiles': 'c1cc[nH]c1', 'fragment_type': 'cation'},  # Base imidazolium
+    {'name': 'Pyridinium', 'smiles': 'c1ccncc1', 'fragment_type': 'cation'},  # Base pyridinium
+    {'name': 'Ammonium', 'smiles': '[NH4+]', 'fragment_type': 'cation'},  # Ammonium
+    {'name': 'Phosphonium', 'smiles': '[P+]', 'fragment_type': 'cation'},  # Phosphonium
 
     # Anions (Common anions in research and industry)
     {'name': 'Tetrafluoroborate', 'smiles': 'F[B-](F)(F)F', 'fragment_type': 'anion'},  # [BF4]

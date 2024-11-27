@@ -1,7 +1,8 @@
 from typing import Dict, Tuple, List
 import numpy as np
 from itertools import product
-from models.shortList_frag import fragments
+import os
+from utils.utils import get_fragment_properties
 
 # Constants for chemical rules
 MAX_BOND_CAPACITY = 4  # Maximum total bond capacity
@@ -11,46 +12,26 @@ class MolecularValidator:
     """Validates ionic liquid combinations based on chemical rules"""
     
     def __init__(self):
-        """Initialize validator with fragment properties"""
-        self.fragment_properties = {
-            'cation': {
-                'Ethylimidazolium': {"valence": 1, "bond_capacity": 2},
-                'Methylimidazolium': {"valence": 1, "bond_capacity": 2},
-                'Propylimidazolium': {"valence": 1, "bond_capacity": 2},
-                '1-Butylpyridinium': {"valence": 1, "bond_capacity": 2},
-                '1-Ethylpyridinium': {"valence": 1, "bond_capacity": 2},
-                '1-Propylpyridinium': {"valence": 1, "bond_capacity": 2}
-            },
-            'anion': {
-                'Tetrafluoroborate': {"valence": -1, "bond_capacity": 1},
-                'Bis(trifluoromethanesulfonyl)imide': {"valence": -1, "bond_capacity": 1},
-                'Chloride': {"valence": -1, "bond_capacity": 1},
-                'Bromide': {"valence": -1, "bond_capacity": 1},
-                'Trifluoromethanesulfonate': {"valence": -1, "bond_capacity": 1},
-                'Dicyanamide': {"valence": -1, "bond_capacity": 1}
-            },
-            'alkyl_chain': {
-                'Methyl': {"valence": 0, "bond_capacity": 1},
-                'Ethyl': {"valence": 0, "bond_capacity": 1},
-                'Propyl': {"valence": 0, "bond_capacity": 1},
-                'Butyl': {"valence": 0, "bond_capacity": 1},
-                'Pentyl': {"valence": 0, "bond_capacity": 1},
-                'Hexyl': {"valence": 0, "bond_capacity": 1},
-                'Octyl': {"valence": 0, "bond_capacity": 1}
-            }
-        }
+        """Initialize validator"""
+        pass
     
-    def _check_fragment_exists(self, fragment: Dict) -> bool:
-        """Check if fragment exists in validation rules"""
-        try:
-            fragment_name = fragment.get('name')  
-            fragment_type = fragment.get('fragment_type')  
-            if not fragment_name or not fragment_type:
-                return False
-            return fragment_name in self.fragment_properties.get(fragment_type.lower(), {})
-        except Exception as e:
-            print(f"Error checking fragment existence: {e}")
-            return False
+    def _get_fragment_valence(self, fragment: Dict) -> int:
+        """Get fragment valence based on fragment type"""
+        fragment_type = fragment.get('fragment_type', '').lower()
+        if fragment_type == 'cation':
+            return 1
+        elif fragment_type == 'anion':
+            return -1
+        elif fragment_type == 'alkyl_chain':
+            return 0
+        return 0
+    
+    def _get_fragment_bond_capacity(self, fragment: Dict) -> int:
+        """Get fragment bond capacity based on properties"""
+        props = get_fragment_properties(fragment['name'], fragment['fragment_type'])
+        if not props:
+            return 0
+        return min(props.get('rotatable_bond_count', 0) + 1, MAX_BOND_CAPACITY)
     
     def validate(self, cation: Dict, anion: Dict, alkyl: Dict) -> Tuple[bool, str]:
         """
@@ -59,32 +40,34 @@ class MolecularValidator:
             Tuple[bool, str]: (is_valid, message)
         """
         try:
-            # Check if fragments exist in our properties
-            if not self._check_fragment_exists(cation):
-                return False, f"Cation {cation.get('name')} not found in validation rules"
-            if not self._check_fragment_exists(anion):
-                return False, f"Anion {anion.get('name')} not found in validation rules"
-            if not self._check_fragment_exists(alkyl):
-                return False, f"Alkyl chain {alkyl.get('name')} not found in validation rules"
+            # Check if we can get properties for all fragments
+            fragments = [
+                (cation, "Cation"),
+                (anion, "Anion"),
+                (alkyl, "Alkyl chain")
+            ]
             
-            # Get fragment properties
-            cat_props = self.fragment_properties['cation'][cation['name']]
-            an_props = self.fragment_properties['anion'][anion['name']]
-            alkyl_props = self.fragment_properties['alkyl_chain'][alkyl['name']]
+            for frag, frag_type in fragments:
+                props = get_fragment_properties(frag['name'], frag['fragment_type'])
+                if not props:
+                    return False, f"{frag_type} {frag.get('name')} properties not found"
+            
+            # Get valences
+            cat_valence = self._get_fragment_valence(cation)
+            an_valence = self._get_fragment_valence(anion)
+            alkyl_valence = self._get_fragment_valence(alkyl)
             
             # Check valence balance
-            total_valence = (cat_props['valence'] + 
-                           an_props['valence'] + 
-                           alkyl_props['valence'])
-            
+            total_valence = cat_valence + an_valence + alkyl_valence
             if total_valence != 0:
                 return False, f"Invalid valence balance: {total_valence}"
             
-            # Check bond capacity
-            total_bonds = (cat_props['bond_capacity'] + 
-                         an_props['bond_capacity'] + 
-                         alkyl_props['bond_capacity'])
+            # Get and check bond capacities
+            cat_bonds = self._get_fragment_bond_capacity(cation)
+            an_bonds = self._get_fragment_bond_capacity(anion)
+            alkyl_bonds = self._get_fragment_bond_capacity(alkyl)
             
+            total_bonds = cat_bonds + an_bonds + alkyl_bonds
             if total_bonds > MAX_BOND_CAPACITY:
                 return False, f"Too many bonds: {total_bonds}"
             
@@ -97,27 +80,27 @@ class MolecularValidator:
 def generate_valid_combinations(fragments_list):
     """Generate valid combinations from the fragments list"""
     # Separate fragments by type
-    cations = [f for f in fragments_list if f.get('fragment_type').lower() == 'cation']
-    anions = [f for f in fragments_list if f.get('fragment_type').lower() == 'anion']
-    alkyls = [f for f in fragments_list if f.get('fragment_type').lower() == 'alkyl_chain']
+    cations = [f for f in fragments_list if f.get('fragment_type', '').lower() == 'cation']
+    anions = [f for f in fragments_list if f.get('fragment_type', '').lower() == 'anion']
+    alkyl_chains = [f for f in fragments_list if f.get('fragment_type', '').lower() == 'alkyl_chain']
     
-    valid_combinations = []
     validator = MolecularValidator()
-    for cation, anion, alkyl in product(cations, anions, alkyls):
+    valid_combinations = []
+    
+    # Generate all possible combinations
+    for cation, anion, alkyl in product(cations, anions, alkyl_chains):
         is_valid, message = validator.validate(cation, anion, alkyl)
         if is_valid:
             valid_combinations.append({
-                'name': f"{cation['name']} {anion['name']} with {alkyl['name']}",
                 'cation': cation,
                 'anion': anion,
-                'alkyl': alkyl,
+                'alkyl_chain': alkyl
             })
-    
+            
     return valid_combinations
 
 if __name__ == "__main__":
     # Test the validation
+    from models.shortList_frag import fragments
     valid_combinations = generate_valid_combinations(fragments)
-    print(f"Found {len(valid_combinations)} valid combinations:")
-    for combo in valid_combinations:
-        print(f"\nName: {combo['name']}")
+    print(f"Found {len(valid_combinations)} valid combinations")
