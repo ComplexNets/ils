@@ -3,9 +3,7 @@ import re
 import sys
 import os
 import requests
-import pymysql
-from bs4 import BeautifulSoup
-from dotenv import load_dotenv
+import pandas as pd
 from typing import Dict, Optional
 
 # Add project root to Python path
@@ -17,32 +15,6 @@ from utils.rdkit_utils import get_rdkit_properties
 from models.shortList_frag import fragments
 
 __all__ = ['standardize_il_name', 'generate_il_name', 'get_molecular_weight', 'get_fragment_properties', 'is_in_il_thermo']
-
-def connect_to_database():
-    """Connect to MySQL database using environment variables"""
-    try:
-        # Load environment variables
-        load_dotenv()
-        
-        # Database connection parameters
-        db_params = {
-            'host': os.getenv('DB_HOST'),
-            'user': os.getenv('DB_USER'),
-            'password': os.getenv('DB_PASSWORD'),
-            'db': os.getenv('DB_NAME'),
-            'charset': 'utf8mb4',
-            'cursorclass': pymysql.cursors.DictCursor  # Use DictCursor to return results as dictionaries
-        }
-        
-        # Connect to database
-        connection = pymysql.connect(**db_params)
-        cursor = connection.cursor()
-        
-        return connection, cursor
-        
-    except Exception as e:
-        print(f"Database connection error: {str(e)}")
-        return None, None
 
 def standardize_il_name(name: str) -> str:
     """Standardize ionic liquid name to match IL Thermo format with lowercase conventions"""
@@ -124,118 +96,72 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict) -> str:
         return "unknown-il"
 
 def get_molecular_weight(fragment_name: str, fragment_type: str) -> float:
-    """Get molecular weight for a fragment from the database"""
+    """Get molecular weight for a fragment from the CSV data"""
     try:
-        conn, cursor = connect_to_database()
-        if not conn:
-            return 0.0
-
-        # Standardize the fragment name
-        fragment_name = standardize_il_name(fragment_name)
-        
-        # Query the IonicLiquids table
-        query = "SELECT molecular_weight FROM IonicLiquids WHERE name = %s AND type = %s"
-        cursor.execute(query, (fragment_name, fragment_type))
-        result = cursor.fetchone()
-        
-        if result and result['molecular_weight']:
-            return float(result['molecular_weight'])
+        # Get properties from CSV
+        props = get_fragment_properties(fragment_name, fragment_type)
+        if props and 'molecular_weight' in props:
+            return float(props['molecular_weight'])
         return 0.0
         
     except Exception as e:
         print(f"Error getting molecular weight: {e}")
         return 0.0
-    finally:
-        if conn:
-            conn.close()
+
+def load_fragment_data_from_csv() -> pd.DataFrame:
+    """Load fragment data from local CSV file"""
+    try:
+        csv_path = os.path.join(project_root, 'fragment_data', 'autono17_ilselect_db.csv')
+        if not os.path.exists(csv_path):
+            print(f"Error: CSV file not found at {csv_path}")
+            return pd.DataFrame()
+            
+        df = pd.read_csv(csv_path)
+        # Convert numeric columns that might have NaN to float
+        numeric_columns = ['molecular_weight', 'density', 'specific_heat_capacity', 
+                         'hydrogen_bond_donor_count', 'hydrogen_bond_acceptor_count',
+                         'rotatable_bond_count', 'charge', 'heavy_atom_count', 'tpsa']
+        for col in numeric_columns:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df
+    except Exception as e:
+        print(f"Error loading fragment data from CSV: {str(e)}")
+        return pd.DataFrame()
 
 def get_fragment_properties(fragment_name: str, fragment_type: str) -> Optional[Dict]:
     """
-    Get fragment properties from database, return None if not found or error occurs
+    Get fragment properties from CSV file, return None if not found or error occurs
     """
     try:
-        # Connect to database
-        conn, cursor = connect_to_database()
-        if not conn:
+        # Load data from CSV
+        df = load_fragment_data_from_csv()
+        if df.empty:
             return None
             
-        # Query for properties with case-insensitive type matching
-        sql = """
-            SELECT molecular_weight, density, specific_heat_capacity,
-                   hydrogen_bond_donor_count, hydrogen_bond_acceptor_count,
-                   rotatable_bond_count, charge, heavy_atom_count,
-                   tpsa, smiles
-            FROM IonicLiquids
-            WHERE name = %s AND LOWER(type) = LOWER(%s)
-        """
-        
-        cursor.execute(sql, (fragment_name, fragment_type))
-        result = cursor.fetchone()
-        
-        if result:
+        # Query for properties with case-insensitive name matching
+        result = df[df['name'].str.lower() == fragment_name.lower()]
+        if not result.empty:
             # Convert numeric values to their proper types
             props = {
-                'molecular_weight': float(result['molecular_weight']) if result['molecular_weight'] else 0.0,
-                'density': float(result['density']) if result['density'] else None,
-                'specific_heat_capacity': float(result['specific_heat_capacity']) if result['specific_heat_capacity'] else None,
-                'hydrogen_bond_donor_count': int(result['hydrogen_bond_donor_count']) if result['hydrogen_bond_donor_count'] else 0,
-                'hydrogen_bond_acceptor_count': int(result['hydrogen_bond_acceptor_count']) if result['hydrogen_bond_acceptor_count'] else 0,
-                'rotatable_bond_count': int(result['rotatable_bond_count']) if result['rotatable_bond_count'] else 0,
-                'charge': int(result['charge']) if result['charge'] else 0,
-                'heavy_atom_count': int(result['heavy_atom_count']) if result['heavy_atom_count'] else 0,
-                'topological_polar_surface_area': float(result['tpsa']) if result['tpsa'] else 0.0,
-                'smiles': result['smiles']
+                'molecular_weight': float(result['molecular_weight'].iloc[0]) if not pd.isna(result['molecular_weight'].iloc[0]) else 0.0,
+                'density': float(result['density'].iloc[0]) if not pd.isna(result['density'].iloc[0]) else None,
+                'specific_heat_capacity': float(result['specific_heat_capacity'].iloc[0]) if not pd.isna(result['specific_heat_capacity'].iloc[0]) else None,
+                'hydrogen_bond_donor_count': int(result['hydrogen_bond_donor_count'].iloc[0]) if not pd.isna(result['hydrogen_bond_donor_count'].iloc[0]) else 0,
+                'hydrogen_bond_acceptor_count': int(result['hydrogen_bond_acceptor_count'].iloc[0]) if not pd.isna(result['hydrogen_bond_acceptor_count'].iloc[0]) else 0,
+                'rotatable_bond_count': int(result['rotatable_bond_count'].iloc[0]) if not pd.isna(result['rotatable_bond_count'].iloc[0]) else 0,
+                'charge': int(result['charge'].iloc[0]) if not pd.isna(result['charge'].iloc[0]) else 0,
+                'heavy_atom_count': int(result['heavy_atom_count'].iloc[0]) if not pd.isna(result['heavy_atom_count'].iloc[0]) else 0,
+                'topological_polar_surface_area': float(result['tpsa'].iloc[0]) if not pd.isna(result['tpsa'].iloc[0]) else 0.0,
+                'smiles': result['smiles'].iloc[0] if not pd.isna(result['smiles'].iloc[0]) else None
             }
             return props
-        
-        # If not in database, try to find SMILES in fragments data
-        matching_fragments = [f for f in fragments if f['fragment_type'] == fragment_type and f['name'] == fragment_name]
-        if matching_fragments:
-            frag = matching_fragments[0]
-            print(f"  No database entry for {fragment_name}, calculating with RDKit...")
-            return get_rdkit_properties(frag['smiles'])
             
         print(f"  No properties found for {fragment_name}")
         return None
         
     except Exception as e:
-        print(f"Database error: {str(e)}")
-        return None
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
-def get_db_properties(cursor, name):
-    """Get properties from database for a given fragment"""
-    try:
-        # Using the new snake_case column names
-        query = """
-        SELECT name, smiles, type, molecular_weight, density, 
-               specific_heat_capacity, toxicity_rating, ld50
-        FROM IonicLiquids 
-        WHERE name = %s
-        """
-        cursor.execute(query, (name,))
-        result = cursor.fetchone()
-        
-        if result:
-            # Convert numeric values to float where applicable
-            return {
-                'name': result['name'],
-                'smiles': result['smiles'],
-                'type': result['type'],
-                'molecular_weight': float(result['molecular_weight']) if result['molecular_weight'] else None,
-                'density': float(result['density']) if result['density'] else None,
-                'specific_heat_capacity': float(result['specific_heat_capacity']) if result['specific_heat_capacity'] else None,
-                'toxicity_rating': result['toxicity_rating'],
-                'ld50': result['ld50']
-            }
-        return None
-        
-    except Exception as e:
-        print(f"Database error: {str(e)}")
+        print(f"Error getting fragment properties: {str(e)}")
         return None
 
 def is_in_il_thermo(il_name):
@@ -272,6 +198,4 @@ def is_in_il_thermo(il_name):
 
 if __name__ == "__main__":
     # Test database connection
-    conn, cursor = connect_to_database()
-    if conn:
-        conn.close()
+    pass
