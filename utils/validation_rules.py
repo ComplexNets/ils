@@ -87,20 +87,32 @@ def generate_valid_combinations(fragments_list):
     validator = MolecularValidator()
     valid_combinations = []
     
+    # Calculate total combinations for progress tracking
+    total_combinations = len(cations) * len(anions) * len(alkyl_chains)
+    checked_combinations = 0
+    
     # Generate all possible combinations
-    for cation, anion, alkyl in product(cations, anions, alkyl_chains):
-        is_valid, message = validator.validate(cation, anion, alkyl)
-        if is_valid:
-            valid_combinations.append({
-                'cation': cation,
-                'anion': anion,
-                'alkyl_chain': alkyl
-            })
-            
+    for cation in cations:
+        for anion in anions:
+            for alkyl in alkyl_chains:
+                checked_combinations += 1
+                
+                # Update progress in streamlit if available
+                if 'st' in globals():
+                    progress = checked_combinations / total_combinations
+                    st.progress(progress)
+                
+                is_valid, message = validator.validate(cation, anion, alkyl)
+                if is_valid:
+                    valid_combinations.append({
+                        'cation': cation,
+                        'anion': anion,
+                        'alkyl_chain': alkyl
+                    })
+    
     return valid_combinations
 
 if __name__ == "__main__":
     # Test the validation
     from models.shortList_frag import fragments
     valid_combinations = generate_valid_combinations(fragments)
-    print(f"Found {len(valid_combinations)} valid combinations")

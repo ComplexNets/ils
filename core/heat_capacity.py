@@ -123,7 +123,14 @@ def get_fragment_type(fragment_name: str, fragment_type: str) -> str:
             return 'SCN-'
         elif 'dicyanamide' in name_lower or 'dca' in name_lower:
             return 'DCA-'
+        elif 'triflate' in name_lower or 'trifluoromethanesulfonate' in name_lower:
+            return 'NTf2-'  # Using NTf2 parameters as approximation
         return 'BF4-'  # Default to BF4 if unknown
+    
+    elif fragment_type == 'Alkyl':
+        if name_lower.startswith('methyl'):
+            return 'CH3'
+        return 'CH2'  # Default to CH2 for other alkyl chains
     
     return None
 
@@ -154,6 +161,11 @@ def calculate_ionic_liquid_heat_capacity(ionic_liquid: Dict) -> Optional[float]:
     """
     try:
         print(f"\nCalculating heat capacity for {ionic_liquid['cation'].get('name', 'Unknown')} {ionic_liquid['anion'].get('name', 'Unknown')} with {ionic_liquid['alkyl_chain'].get('name', 'Unknown')}:")
+        
+        # Set fragment types
+        ionic_liquid['cation']['fragment_type'] = 'Cation'
+        ionic_liquid['anion']['fragment_type'] = 'Anion'
+        ionic_liquid['alkyl_chain']['fragment_type'] = 'Alkyl'
         
         # Calculate heat capacity for each component
         cation_cp = estimate_fragment_heat_capacity(ionic_liquid['cation'])
