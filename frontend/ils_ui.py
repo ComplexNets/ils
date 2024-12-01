@@ -205,6 +205,8 @@ def calculate_properties():
             validation_progress.empty()
             return [], []
         
+        total_feasible = len(valid_combinations)
+        
         # Step 2: Calculate properties for valid combinations
         calculation_status = st.empty()
         calculation_progress = st.progress(0.0)
@@ -249,14 +251,21 @@ def calculate_properties():
                     'cation': combo['cation']['name'],
                     'anion': combo['anion']['name'],
                     'alkyl_chain': combo['alkyl_chain']['name'],
-                    'in_ilthermo': is_in_il_thermo(combo['name']),
-                    'heat_capacity': float(heat_capacity),
-                    'density': float(density),
-                    'toxicity': float(toxicity)
+                    'heat_capacity': heat_capacity,
+                    'density': density,
+                    'toxicity': toxicity,
+                    'in_ilthermo': combo.get('in_ilthermo', False)
                 })
             except Exception as e:
-                st.error(f"Error calculating properties for {combo['name']}: {str(e)}")
+                print(f"Error calculating properties for {combo['name']}: {str(e)}")
                 continue
+        
+        calculation_status.empty()
+        calculation_progress.empty()
+        
+        # Store the results in session state
+        st.session_state.combinations = combinations
+        st.session_state.total_feasible = total_feasible
         
         if not combinations:
             st.warning("No combinations found within the specified property ranges.")
@@ -673,13 +682,25 @@ def display_results():
     with tab5:
         st.subheader("Optimization Statistics")
         
-        # Create three columns for statistics
+        # Create columns for statistics
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            st.metric("Total Combinations", len(combinations))
-            st.metric("Pareto-optimal Solutions", len(pareto_front))
-            st.metric("ILThermo Validated", sum(1 for s in combinations if s.get('in_ilthermo', False)))
+            st.metric(
+                "Total Feasible ILs",
+                f"{st.session_state.total_feasible}",
+                help="Total number of chemically feasible ionic liquids"
+            )
+            st.metric(
+                "Valid ILs (In Range)",
+                f"{len(combinations)}",
+                help="Number of ionic liquids within specified property ranges"
+            )
+            st.metric(
+                "ILThermo Validated",
+                f"{sum(1 for c in combinations if c['in_ilthermo'])}",
+                help="Number of ionic liquids found in ILThermo database"
+            )
         
         with col2:
             # Calculate property ranges in the results

@@ -192,9 +192,9 @@ def display_property_inputs():
     st.subheader("Heat Capacity (J/mol·K)")
     hc_col1, hc_col2, hc_col3 = st.columns(3)
     with hc_col1:
-        hc_min = st.number_input("Min", value=200.0, step=10.0, key="hc_min")
+        hc_min = st.number_input("Min", value=000.0, step=10.0, key="hc_min")
     with hc_col2:
-        hc_max = st.number_input("Max", value=400.0, step=10.0, key="hc_max")
+        hc_max = st.number_input("Max", value=1000.0, step=10.0, key="hc_max")
     with hc_col3:
         hc_importance = st.slider("Importance", 1, 5, 3, key="hc_importance")
     
@@ -202,9 +202,9 @@ def display_property_inputs():
     st.subheader("Density (kg/m³)")
     d_col1, d_col2, d_col3 = st.columns(3)
     with d_col1:
-        d_min = st.number_input("Min", value=800.0, step=50.0, key="d_min")
+        d_min = st.number_input("Min", value=000.0, step=50.0, key="d_min")
     with d_col2:
-        d_max = st.number_input("Max", value=1500.0, step=50.0, key="d_max")
+        d_max = st.number_input("Max", value=2000.0, step=50.0, key="d_max")
     with d_col3:
         d_importance = st.slider("Importance", 1, 5, 3, key="d_importance")
     
