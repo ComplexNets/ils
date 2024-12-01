@@ -383,10 +383,11 @@ def plot_pareto_front(combinations, pareto_front, prop_ranges):
                                values=scaled_values))
             
             fig_parallel.add_trace(go.Parcoords(
-                line=dict(color='rgba(255,0,0,1)',
-                         colorscale=[[0, 'rgba(255,0,0,1)'], 
-                                   [1, 'rgba(255,0,0,1)']]),
-                dimensions=dims
+                line=dict(color='rgba(255,255,255,1)',
+                         colorscale=[[0, 'rgba(255,255,255,1)'], 
+                                   [1, 'rgba(255,255,255,1)']]),
+                dimensions=dims,
+                name='Pareto Solutions'
             ))
         
         fig_parallel.update_layout(
@@ -515,7 +516,19 @@ def plot_property_correlation(combinations):
     fig_splom = go.Figure(data=go.Splom(
         dimensions=[dict(label=p, values=[c[p] for c in combinations]) for p in props],
         showupperhalf=False,
-        diagonal_visible=False
+        diagonal_visible=False,
+        text=[c.get('name', f'IL {i+1}') for i, c in enumerate(combinations)],
+        hovertemplate='<b>%{text}</b><br>' +
+                     '%{xaxis.title.text}: %{x:.2f}<br>' +
+                     '%{yaxis.title.text}: %{y:.2f}<br>',
+        marker=dict(
+            color='white',
+            size=6,
+            line=dict(
+                color='darkgray',
+                width=1
+            )
+        )
     ))
     
     fig_splom.update_layout(
