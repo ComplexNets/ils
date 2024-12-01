@@ -129,29 +129,27 @@ def get_user_ranges():
 
 def calculate_properties():
     """Calculate properties for all valid combinations"""
-    # Create placeholders for progress
+    # Create single set of progress indicators
     status_text = st.empty()
-    progress_bar = st.progress(0)
+    progress_bar = st.progress(0.0)
     
     try:
         # Step 1: Get fragments and generate combinations
-        status_text.write("🔍 Generating valid ionic liquid combinations...")
         fragments_data = get_filtered_fragments()
-        
-        # Create progress elements
-        status_text = st.empty()
-        progress_bar = st.progress(0.0)
         
         # Calculate total possible combinations
         total_possible = (len(fragments_data['cation']) * 
                         len(fragments_data['anion']) * 
                         len(fragments_data['alkyl_chain']))
         
+        status_text.write("🔍 Generating valid ionic liquid combinations...")
         # Generate valid combinations with progress tracking
-        valid_combinations = combine_fragments(status_text=status_text, progress_bar=progress_bar)
+        valid_combinations = combine_fragments()
         
         if not valid_combinations:
             st.warning("No valid ionic liquid combinations found.")
+            progress_bar.empty()
+            status_text.empty()
             return [], []
         
         status_text.write(f"✅ Found {len(valid_combinations)} valid combinations")

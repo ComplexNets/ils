@@ -118,26 +118,15 @@ def validate_combination(combination_tuple, validator=None):
         }
     return None
 
-def combine_fragments(status_text=None, progress_bar=None) -> List[Dict]:
+def combine_fragments() -> List[Dict]:
     """
     Combines fragments into valid ionic liquid combinations using parallel processing.
-    Args:
-        status_text: Streamlit text element for status updates
-        progress_bar: Streamlit progress bar element
     Returns:
         List of valid ionic liquid combinations
     """
     try:
         # Get all fragments with properties
         fragments_data = get_filtered_fragments()
-        
-        # Calculate total possible combinations
-        total_possible = (len(fragments_data['cation']) * 
-                        len(fragments_data['anion']) * 
-                        len(fragments_data['alkyl_chain']))
-        
-        if status_text:
-            status_text.write(f"Starting validation of {total_possible} possible combinations...")
         
         # Create all possible combinations
         combinations = list(product(
@@ -146,9 +135,8 @@ def combine_fragments(status_text=None, progress_bar=None) -> List[Dict]:
             fragments_data['alkyl_chain']
         ))
         
-        # Process combinations in parallel with progress tracking
+        # Process combinations in parallel
         valid_combinations = []
-        processed_count = 0
         
         # Use ThreadPoolExecutor instead of ProcessPoolExecutor for Streamlit compatibility
         with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
@@ -158,31 +146,15 @@ def combine_fragments(status_text=None, progress_bar=None) -> List[Dict]:
             
             # Process results as they complete
             for future in concurrent.futures.as_completed(future_to_combo):
-                processed_count += 1
-                
-                # Update progress
-                if status_text and progress_bar:
-                    progress = processed_count / total_possible
-                    progress_bar.progress(progress)
-                    status_text.write(f"Validating combinations: {processed_count}/{total_possible}")
-                
                 # Get the result
                 result = future.result()
                 if result is not None:
                     valid_combinations.append(result)
-                    print(f"Valid combination: {result['name']}")
-        
-        # Show final statistics if UI elements available
-        if status_text:
-            valid_percent = (len(valid_combinations) / total_possible) * 100
-            status_text.write(f"✅ Validation complete: Found {len(valid_combinations)} valid combinations ({valid_percent:.1f}% of total possible)")
         
         return valid_combinations
-        
+    
     except Exception as e:
-        if status_text:
-            status_text.error(f"Error during combination process: {str(e)}")
-        print(f"Error during combination process: {str(e)}")
+        print(f"Error in combine_fragments: {str(e)}")
         return []
 
 if __name__ == "__main__":
