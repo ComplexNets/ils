@@ -35,101 +35,161 @@ def get_user_ranges():
     
     # Density range (kg/m³)
     st.sidebar.subheader("Density (kg/m³)")
-    density_min = st.sidebar.number_input(
-        "Minimum Density",
-        value=prop_ranges.properties['density'].range[0],
-        step=100
+    density_col1, density_col2, density_col3 = st.sidebar.columns(3)
+    with density_col1:
+        density_min = st.number_input(
+            "Minimum",
+            value=float(prop_ranges.properties['density'].range[0]),
+            step=50.0,
+            format="%.1f",
+            key="density_min"
+        )
+    with density_col2:
+        density_max = st.number_input(
+            "Maximum",
+            value=float(prop_ranges.properties['density'].range[1]),
+            step=50.0,
+            format="%.1f",
+            key="density_max"
+        )
+    with density_col3:
+        density_importance = st.slider(
+            "Importance",
+            min_value=1,
+            max_value=5,
+            value=prop_ranges.properties['density'].importance,
+            key="density_importance"
+        )
+    density_optimize_higher = st.sidebar.radio(
+        "Density Optimization",
+        ["Higher is better", "Lower is better"],
+        index=0 if prop_ranges.properties['density'].optimize_higher else 1,
+        horizontal=True,
+        key="density_optimize"
     )
-    density_max = st.sidebar.number_input(
-        "Maximum Density",
-        value=prop_ranges.properties['density'].range[1],
-        step=100
-    )
-    density_importance = st.sidebar.slider(
-        "Density Importance",
-        min_value=1,
-        max_value=5,
-        value=prop_ranges.properties['density'].importance
-    )
-    density_strict = st.sidebar.checkbox("Strict Density Constraint", value=False)
-    
+
     # Heat capacity range (J/mol·K)
     st.sidebar.subheader("Heat Capacity (J/mol·K)")
-    cp_min = st.sidebar.number_input(
-        "Minimum Heat Capacity",
-        value=prop_ranges.properties['heat_capacity'].range[0],
-        step=50
+    cp_col1, cp_col2, cp_col3 = st.sidebar.columns(3)
+    with cp_col1:
+        cp_min = st.number_input(
+            "Minimum",
+            value=float(prop_ranges.properties['heat_capacity'].range[0]),
+            step=10.0,
+            format="%.1f",
+            key="cp_min"
+        )
+    with cp_col2:
+        cp_max = st.number_input(
+            "Maximum",
+            value=float(prop_ranges.properties['heat_capacity'].range[1]),
+            step=10.0,
+            format="%.1f",
+            key="cp_max"
+        )
+    with cp_col3:
+        cp_importance = st.slider(
+            "Importance",
+            min_value=1,
+            max_value=5,
+            value=prop_ranges.properties['heat_capacity'].importance,
+            key="cp_importance"
+        )
+    cp_optimize_higher = st.sidebar.radio(
+        "Heat Capacity Optimization",
+        ["Higher is better", "Lower is better"],
+        index=0 if prop_ranges.properties['heat_capacity'].optimize_higher else 1,
+        horizontal=True,
+        key="cp_optimize"
     )
-    cp_max = st.sidebar.number_input(
-        "Maximum Heat Capacity",
-        value=prop_ranges.properties['heat_capacity'].range[1],
-        step=50
-    )
-    cp_importance = st.sidebar.slider(
-        "Heat Capacity Importance",
-        min_value=1,
-        max_value=5,
-        value=prop_ranges.properties['heat_capacity'].importance
-    )
-    cp_strict = st.sidebar.checkbox("Strict Heat Capacity Constraint", value=False)
-    
+
     # Toxicity range (IC50 in mM)
     st.sidebar.subheader("Toxicity (IC50 in mM)")
-    toxicity_min = st.sidebar.number_input(
-        "Minimum IC50",
-        value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[0],
-        step=0.1,
-        format="%.1f"
+    toxicity_col1, toxicity_col2, toxicity_col3 = st.sidebar.columns(3)
+    with toxicity_col1:
+        toxicity_min = st.number_input(
+            "Minimum IC50",
+            value=float(prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[0]),
+            step=0.1,
+            format="%.1f",
+            key="toxicity_min"
+        )
+    with toxicity_col2:
+        toxicity_max = st.number_input(
+            "Maximum IC50",
+            value=float(prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[1]),
+            step=0.1,
+            format="%.1f",
+            key="toxicity_max"
+        )
+    with toxicity_col3:
+        toxicity_importance = st.slider(
+            "Importance",
+            min_value=1,
+            max_value=5,
+            value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).importance,
+            key="toxicity_importance"
+        )
+    toxicity_optimize_higher = st.sidebar.radio(
+        "Toxicity Optimization",
+        ["Higher is better (less toxic)", "Lower is better (more toxic)"],
+        index=0 if prop_ranges.properties.get('toxicity').optimize_higher else 1,
+        horizontal=True,
+        key="toxicity_optimize"
     )
-    toxicity_max = st.sidebar.number_input(
-        "Maximum IC50",
-        value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[1],
-        step=0.1,
-        format="%.1f"
-    )
-    toxicity_importance = st.sidebar.slider(
-        "Toxicity Importance",
-        min_value=1,
-        max_value=5,
-        value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).importance
-    )
-    toxicity_strict = st.sidebar.checkbox("Strict Toxicity Constraint", value=False)
-    
-    # Update property ranges
+
+    # Update property ranges and optimizer constraints
     prop_ranges.update_property(
         'density',
         (density_min, density_max),
         weight=density_importance/5.0,
-        is_strict=density_strict
+        optimize_higher=density_optimize_higher == "Higher is better"
+    )
+    optimizer.set_constraint(
+        'density', 
+        density_min, 
+        density_max, 
+        density_importance/5.0,
+        optimize_higher=density_optimize_higher == "Higher is better"
     )
     
     prop_ranges.update_property(
         'heat_capacity',
         (cp_min, cp_max),
         weight=cp_importance/5.0,
-        is_strict=cp_strict
+        optimize_higher=cp_optimize_higher == "Higher is better"
+    )
+    optimizer.set_constraint(
+        'heat_capacity', 
+        cp_min, 
+        cp_max, 
+        cp_importance/5.0,
+        optimize_higher=cp_optimize_higher == "Higher is better"
     )
     
     prop_ranges.update_property(
         'toxicity',
         (toxicity_min, toxicity_max),
         weight=toxicity_importance/5.0,
-        is_strict=toxicity_strict
+        optimize_higher=toxicity_optimize_higher == "Higher is better (less toxic)"
     )
-    
-    # Update optimizer constraints
-    optimizer.set_constraint('density', density_min, density_max, 
-                           density_importance/5.0, density_strict)
-    optimizer.set_constraint('heat_capacity', cp_min, cp_max,
-                           cp_importance/5.0, cp_strict)
-    optimizer.set_constraint('toxicity', toxicity_min, toxicity_max,
-                           toxicity_importance/5.0, toxicity_strict, inverse=True)
+    optimizer.set_constraint(
+        'toxicity', 
+        toxicity_min, 
+        toxicity_max, 
+        toxicity_importance/5.0,
+        optimize_higher=toxicity_optimize_higher == "Higher is better (less toxic)"
+    )
     
     return prop_ranges
 
 def calculate_properties():
     """Calculate properties for all valid combinations"""
     try:
+        # Get user-defined ranges
+        prop_ranges = st.session_state.property_ranges
+        optimizer = st.session_state.optimizer
+        
         # Step 1: Get fragments and generate combinations
         validation_status = st.empty()
         validation_progress = st.progress(0.0)
@@ -161,22 +221,29 @@ def calculate_properties():
                 # Calculate properties for this combination
                 heat_capacity = calculate_ionic_liquid_heat_capacity(combo)
                 if heat_capacity is None:
-                    st.warning(f"Failed to calculate heat capacity for {combo['name']}")
                     continue
                 
                 density = calculate_density(combo['cation'], combo['anion'], combo['alkyl_chain'])
                 if density is None:
-                    st.warning(f"Failed to calculate density for {combo['name']}")
                     continue
                 
                 toxicity_result = calculate_ionic_liquid_toxicity(combo)
                 if toxicity_result is None:
-                    st.warning(f"Failed to calculate toxicity for {combo['name']}")
                     continue
                 
                 toxicity = toxicity_result.get('ic50_mm', 0.0)
                 
-                # Add to combinations list if all properties were calculated
+                # Check if properties are within user-defined ranges
+                if not (prop_ranges.properties['density'].range[0] <= density <= prop_ranges.properties['density'].range[1]):
+                    continue
+                
+                if not (prop_ranges.properties['heat_capacity'].range[0] <= heat_capacity <= prop_ranges.properties['heat_capacity'].range[1]):
+                    continue
+                
+                if not (prop_ranges.properties['toxicity'].range[0] <= toxicity <= prop_ranges.properties['toxicity'].range[1]):
+                    continue
+                
+                # Add to combinations list if all properties were calculated and within ranges
                 combinations.append({
                     'name': combo['name'],
                     'cation': combo['cation']['name'],
@@ -191,7 +258,15 @@ def calculate_properties():
                 st.error(f"Error calculating properties for {combo['name']}: {str(e)}")
                 continue
         
-        calculation_status.write(f"✅ Calculated properties for {len(combinations)} combinations")
+        if not combinations:
+            st.warning("No combinations found within the specified property ranges.")
+            validation_status.empty()
+            validation_progress.empty()
+            calculation_status.empty()
+            calculation_progress.empty()
+            return [], []
+        
+        calculation_status.write(f"✅ Found {len(combinations)} combinations within specified ranges")
         
         # Step 3: Get Pareto front
         with st.spinner("Calculating Pareto front..."):
@@ -200,11 +275,11 @@ def calculate_properties():
             # Calculate Pareto scores for all combinations
             for combo in combinations:
                 pareto_score = 0.0
-                for prop_name, constraint in st.session_state.optimizer.properties.items():
+                for prop_name, constraint in optimizer.properties.items():
                     val = combo.get(prop_name, 0)
-                    norm_val = st.session_state.optimizer._normalize_property(val, constraint)
+                    norm_val = optimizer._normalize_property(val, constraint)
                     pareto_score += norm_val * constraint.weight
-                combo['pareto_score'] = pareto_score / len(st.session_state.optimizer.properties)
+                combo['pareto_score'] = pareto_score / len(optimizer.properties)
             
             # Add scores to Pareto front solutions
             for solution in pareto_front:
@@ -331,7 +406,8 @@ def plot_pareto_front(combinations, pareto_front, prop_ranges):
             "Select solutions to compare (max 5)",
             range(len(pareto_front)),
             default=range(min(3, num_solutions)),
-            format_func=lambda x: f"Solution {x+1}: {pareto_front[x].get('name', f'Combination {x+1}')}"
+            format_func=lambda x: f"Solution {x+1}: {pareto_front[x].get('name', f'Combination {x+1}')}",
+            key="pareto_solutions"
         )
         
         # Create figure container
@@ -547,10 +623,11 @@ def display_results():
                 min_value=0.0,
                 max_value=1.0,
                 value=0.0,
-                step=0.1
+                step=0.1,
+                key="min_pareto_score"
             )
         with col2:
-            show_ilthermo = st.checkbox("Show only ILThermo validated", value=False)
+            show_ilthermo = st.checkbox("Show only ILThermo validated", value=False, key="show_ilthermo")
         
         # Filter solutions
         filtered_solutions = [
@@ -593,49 +670,30 @@ def display_results():
         
         with col2:
             # Calculate property ranges in the results
-            density_range = (
-                min(s['density'] for s in combinations),
-                max(s['density'] for s in combinations)
-            )
-            cp_range = (
-                min(s['heat_capacity'] for s in combinations),
-                max(s['heat_capacity'] for s in combinations)
-            )
-            toxicity_range = (
-                min(s['toxicity'] for s in combinations),
-                max(s['toxicity'] for s in combinations)
-            )
+            density_values = [s['density'] for s in combinations if 'density' in s]
+            cp_values = [s['heat_capacity'] for s in combinations if 'heat_capacity' in s]
+            toxicity_values = [s['toxicity'] for s in combinations if 'toxicity' in s]
             
-            st.write("Property Ranges Found:")
-            st.write(f"Density: {density_range[0]:.1f} - {density_range[1]:.1f} kg/m³")
-            st.write(f"Heat Capacity: {cp_range[0]:.1f} - {cp_range[1]:.1f} J/mol·K")
-            st.write(f"Toxicity: {toxicity_range[0]:.1f} - {toxicity_range[1]:.1f} mM")
-        
+            if density_values:
+                st.metric("Density Range", 
+                         f"{min(density_values):.1f} - {max(density_values):.1f} kg/m³")
+            if cp_values:
+                st.metric("Heat Capacity Range", 
+                         f"{min(cp_values):.1f} - {max(cp_values):.1f} J/mol·K")
+            if toxicity_values:
+                st.metric("Toxicity Range", 
+                         f"{min(toxicity_values):.1f} - {max(toxicity_values):.1f} mM")
+                         
         with col3:
-            # Calculate fragment usage statistics
-            cation_usage = {}
-            anion_usage = {}
-            alkyl_usage = {}
-            
-            for combo in combinations:
-                cation_name = combo['cation']  # Already a string
-                anion_name = combo['anion']    # Already a string
-                alkyl_name = combo['alkyl_chain']  # Already a string
+            # Show average scores
+            if combinations:
+                avg_density = sum(s.get('density', 0) for s in combinations) / len(combinations)
+                avg_cp = sum(s.get('heat_capacity', 0) for s in combinations) / len(combinations)
+                avg_toxicity = sum(s.get('toxicity', 0) for s in combinations) / len(combinations)
                 
-                cation_usage[cation_name] = cation_usage.get(cation_name, 0) + 1
-                anion_usage[anion_name] = anion_usage.get(anion_name, 0) + 1
-                alkyl_usage[alkyl_name] = alkyl_usage.get(alkyl_name, 0) + 1
-            
-            st.write("Most Used Fragments:")
-            st.write("Cations:")
-            for cation, count in sorted(cation_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
-                st.write(f"  {cation}: {count}")
-            st.write("\nAnions:")
-            for anion, count in sorted(anion_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
-                st.write(f"  {anion}: {count}")
-            st.write("\nAlkyl Chains:")
-            for alkyl, count in sorted(alkyl_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
-                st.write(f"  {alkyl}: {count}")
+                st.metric("Average Density", f"{avg_density:.1f} kg/m³")
+                st.metric("Average Heat Capacity", f"{avg_cp:.1f} J/mol·K")
+                st.metric("Average Toxicity", f"{avg_toxicity:.1f} mM")
         
         # Summary statistics in sidebar
         st.sidebar.subheader("Quick Summary")
@@ -644,7 +702,7 @@ def display_results():
         st.sidebar.write(f"ILThermo validated: {sum(1 for s in combinations if s.get('in_ilthermo', False))}")
         
         # Export results button
-        if st.sidebar.button("Export Results"):
+        if st.sidebar.button("Export Results", key="export_results"):
             csv_data = []
             for sol in pareto_front:
                 csv_data.append({
@@ -672,5 +730,5 @@ st.set_page_config(page_title="Ionic Liquid Optimizer", layout="wide")
 get_user_ranges()
 
 # Add calculate button to sidebar
-if st.sidebar.button("Find Optimal Ionic Liquids"):
+if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
     display_results()

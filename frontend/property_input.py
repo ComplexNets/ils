@@ -9,6 +9,7 @@ class PropertyCriteria:
     range: Tuple[float, float]
     importance: int  # 1-5 scale
     unit: str
+    optimize_higher: bool = True  # True if higher values are better, False if lower values are better
 
 class PropertyRanges:
     def __init__(self):
@@ -16,38 +17,43 @@ class PropertyRanges:
             'heat_capacity': PropertyCriteria(
                 range=(200, 600),  # More realistic default range
                 importance=3,
-                unit="J/mol·K"
+                unit="J/mol·K",
+                optimize_higher=True  # Higher heat capacity is generally better
             ),
             'density': PropertyCriteria(
                 range=(800, 1500),  # More realistic default range
                 importance=3,
-                unit="kg/m³"
+                unit="kg/m³",
+                optimize_higher=False  # Lower density might be preferred for some applications
             ),
             'toxicity': PropertyCriteria(
                 range=(0.1, 100.0),  # IC50 in mM, higher is better (less toxic)
                 importance=3,
-                unit="mM"
+                unit="mM",
+                optimize_higher=True  # Higher IC50 means less toxic
             )
         }
 
-    def update_property(self, property_name: str, range_values: tuple, weight: float = None, is_strict: bool = False):
-        """Update a property's range and importance
+    def update_property(self, property_name: str, range_values: tuple, weight: float = None, optimize_higher: bool = True):
+        """Update a property's range, importance and optimization direction
         
         Args:
             property_name: Name of the property to update
             range_values: Tuple of (min, max) values
             weight: Optional weight/importance value (0-1)
-            is_strict: Whether this is a strict constraint
+            optimize_higher: True if higher values are better, False if lower values are better
         """
         if property_name not in self.properties:
             self.properties[property_name] = PropertyCriteria(
                 range=range_values,
                 importance=int(weight * 5) if weight is not None else 3,
-                unit=""
+                unit="",
+                optimize_higher=optimize_higher
             )
         else:
             prop = self.properties[property_name]
             prop.range = range_values
+            prop.optimize_higher = optimize_higher
             if weight is not None:
                 prop.importance = int(weight * 5)
 
@@ -117,7 +123,8 @@ class PropertyRanges:
         hc_score = self._calculate_property_score(
             heat_capacity, 
             hc_prop.range[0], 
-            hc_prop.range[1]
+            hc_prop.range[1],
+            hc_prop.optimize_higher
         )
         scores.append(hc_score)
         weights.append(hc_weight)
@@ -128,7 +135,8 @@ class PropertyRanges:
         density_score = self._calculate_property_score(
             density, 
             density_prop.range[0], 
-            density_prop.range[1]
+            density_prop.range[1],
+            density_prop.optimize_higher
         )
         scores.append(density_score)
         weights.append(density_weight)
@@ -139,7 +147,8 @@ class PropertyRanges:
         toxicity_score = self._calculate_property_score(
             toxicity, 
             toxicity_prop.range[0], 
-            toxicity_prop.range[1]
+            toxicity_prop.range[1],
+            toxicity_prop.optimize_higher
         )
         scores.append(toxicity_score)
         weights.append(toxicity_weight)
@@ -150,7 +159,7 @@ class PropertyRanges:
         return final_score
 
     @staticmethod
-    def _calculate_property_score(value: float, min_val: float, max_val: float) -> float:
+    def _calculate_property_score(value: float, min_val: float, max_val: float, optimize_higher: bool) -> float:
         """
         Calculate how well a property value fits within the desired range
         Returns score between 0 and 1
@@ -163,7 +172,10 @@ class PropertyRanges:
         distance = min(abs(value - min_val), abs(value - max_val))
         # Use exponential decay for scores outside range
         range_width = max_val - min_val
-        return np.exp(-distance / range_width)
+        if optimize_higher:
+            return np.exp(-distance / range_width)
+        else:
+            return np.exp(-(range_width - distance) / range_width)
 
 def display_property_inputs():
     import streamlit as st
@@ -185,7 +197,6 @@ def display_property_inputs():
         hc_max = st.number_input("Max", value=400.0, step=10.0, key="hc_max")
     with hc_col3:
         hc_importance = st.slider("Importance", 1, 5, 3, key="hc_importance")
-    hc_strict = st.checkbox("Strict constraint", key="hc_strict")
     
     # Density
     st.subheader("Density (kg/m³)")
@@ -196,7 +207,6 @@ def display_property_inputs():
         d_max = st.number_input("Max", value=1500.0, step=50.0, key="d_max")
     with d_col3:
         d_importance = st.slider("Importance", 1, 5, 3, key="d_importance")
-    d_strict = st.checkbox("Strict constraint", key="d_strict")
     
     # Toxicity
     st.subheader("Toxicity (IC50, mM)")
@@ -207,12 +217,11 @@ def display_property_inputs():
         t_max = st.number_input("Max", value=100.0, step=1.0, key="t_max")
     with t_col3:
         t_importance = st.slider("Importance", 1, 5, 3, key="t_importance")
-    t_strict = st.checkbox("Strict constraint", key="t_strict")
     
     # Update optimizer constraints
-    optimizer.set_constraint("heat_capacity", hc_min, hc_max, hc_importance/5.0, hc_strict)
-    optimizer.set_constraint("density", d_min, d_max, d_importance/5.0, d_strict)
-    optimizer.set_constraint("toxicity", t_min, t_max, t_importance/5.0, t_strict)
+    optimizer.set_constraint("heat_capacity", hc_min, hc_max, hc_importance/5.0)
+    optimizer.set_constraint("density", d_min, d_max, d_importance/5.0)
+    optimizer.set_constraint("toxicity", t_min, t_max, t_importance/5.0)
     
     # Run optimization
     if st.button("Find Optimal Ionic Liquids"):

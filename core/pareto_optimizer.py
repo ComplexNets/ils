@@ -11,8 +11,7 @@ class PropertyConstraint:
     min_value: float
     max_value: float
     weight: float  # Importance weight (0-1)
-    is_strict: bool  # If True, solutions must be within range
-    inverse: bool = False  # If True, higher values are better (like IC50)
+    optimize_higher: bool = True  # If True, higher values are better
 
 class ParetoOptimizer:
     def __init__(self):
@@ -20,91 +19,91 @@ class ParetoOptimizer:
         self.properties = {}
         
     def set_constraint(self, property_name: str, min_val: float, max_val: float, 
-                      weight: float, is_strict: bool = False, inverse: bool = False):
+                      weight: float, optimize_higher: bool = True):
         """Update constraints for a specific property"""
         self.properties[property_name] = PropertyConstraint(
             min_value=min_val,
             max_value=max_val,
             weight=weight,
-            is_strict=is_strict,
-            inverse=inverse
+            optimize_higher=optimize_higher
         )
 
     def _normalize_property(self, value: float, prop_constraint: PropertyConstraint) -> float:
-        """Normalize property value to [0,1] range"""
+        """Normalize property value to [0,1] range, considering optimization direction"""
         range_width = prop_constraint.max_value - prop_constraint.min_value
         if range_width == 0:
             return 0.0
             
+        # First normalize to [0,1] range
         normalized = (value - prop_constraint.min_value) / range_width
+        normalized = max(0.0, min(1.0, normalized))
         
-        # For inverse properties (like toxicity IC50), invert the normalized value
-        if prop_constraint.inverse:
+        # If we want to minimize this property, invert the score
+        if not prop_constraint.optimize_higher:
             normalized = 1.0 - normalized
             
-        return max(0.0, min(1.0, normalized))
+        return normalized
 
     def _calculate_dominance(self, solution1: Dict, solution2: Dict) -> bool:
         """
-        Check if solution1 dominates solution2
+        Check if solution1 dominates solution2 using weighted comparison
         Returns True if solution1 dominates solution2, False otherwise
         """
-        at_least_one_better = False
+        total_weight = 0
+        weighted_score1 = 0
+        weighted_score2 = 0
+        
         for prop_name, constraint in self.properties.items():
             val1 = solution1.get(prop_name, 0)
             val2 = solution2.get(prop_name, 0)
             
-            # Normalize values
+            # Normalize values considering optimization direction
             norm1 = self._normalize_property(val1, constraint)
             norm2 = self._normalize_property(val2, constraint)
             
-            if norm1 < norm2:
-                return False
-            elif norm1 > norm2:
-                at_least_one_better = True
-                
-        return at_least_one_better
+            # Add weighted scores
+            weighted_score1 += norm1 * constraint.weight
+            weighted_score2 += norm2 * constraint.weight
+            total_weight += constraint.weight
+            
+        # Compare weighted averages
+        if total_weight > 0:
+            return (weighted_score1 / total_weight) > (weighted_score2 / total_weight)
+        return False
 
     def get_pareto_front(self, solutions: List[Dict]) -> List[Dict]:
         """
-        Identify Pareto-optimal solutions
+        Identify Pareto-optimal solutions using weighted scoring
         Args:
             solutions: List of dictionaries containing property values
         Returns:
-            List of non-dominated solutions
+            List of solutions sorted by weighted score
         """
-        pareto_front = []
-        
-        for solution in solutions:
-            # Check strict constraints first
-            if not self._meets_strict_constraints(solution):
-                continue
-                
-            is_dominated = False
+        if not solutions:
+            return []
             
-            # Compare with existing Pareto front
-            for idx, pareto_solution in enumerate(pareto_front):
-                if self._calculate_dominance(pareto_solution, solution):
-                    is_dominated = True
-                    break
-                elif self._calculate_dominance(solution, pareto_solution):
-                    pareto_front.pop(idx)
+        # Calculate weighted scores for all solutions
+        scored_solutions = []
+        for solution in solutions:
+            total_score = 0
+            total_weight = 0
+            
+            for prop_name, constraint in self.properties.items():
+                if prop_name in solution:
+                    value = solution[prop_name]
+                    norm_value = self._normalize_property(value, constraint)
+                    total_score += norm_value * constraint.weight
+                    total_weight += constraint.weight
                     
-            if not is_dominated:
-                pareto_front.append(solution)
+            if total_weight > 0:
+                weighted_score = total_score / total_weight
+                scored_solutions.append((weighted_score, solution))
                 
-        return pareto_front
-
-    def _meets_strict_constraints(self, solution: Dict) -> bool:
-        """Check if solution meets all strict constraints"""
-        for prop_name, constraint in self.properties.items():
-            if not constraint.is_strict:
-                continue
-                
-            value = solution.get(prop_name, 0)
-            if not (constraint.min_value <= value <= constraint.max_value):
-                return False
-        return True
+        # Sort by weighted score
+        scored_solutions.sort(reverse=True, key=lambda x: x[0])
+        
+        # Return sorted solutions
+        return [solution for score, solution in scored_solutions]
 
     def rank_solutions(self, solutions: List[Dict]) -> List[Dict]:
         """
@@ -117,9 +116,6 @@ class ParetoOptimizer:
         ranked_solutions = []
         
         for solution in solutions:
-            if not self._meets_strict_constraints(solution):
-                continue
-                
             total_score = 0
             total_weight = 0
             
