@@ -129,39 +129,33 @@ def get_user_ranges():
 
 def calculate_properties():
     """Calculate properties for all valid combinations"""
-    # Create single set of progress indicators
-    status_text = st.empty()
-    progress_bar = st.progress(0.0)
-    
     try:
         # Step 1: Get fragments and generate combinations
-        fragments_data = get_filtered_fragments()
+        validation_status = st.empty()
+        validation_progress = st.progress(0.0)
         
-        # Calculate total possible combinations
-        total_possible = (len(fragments_data['cation']) * 
-                        len(fragments_data['anion']) * 
-                        len(fragments_data['alkyl_chain']))
-        
-        status_text.write("🔍 Generating valid ionic liquid combinations...")
-        # Generate valid combinations with progress tracking
-        valid_combinations = combine_fragments()
+        valid_combinations = combine_fragments(
+            status_text=validation_status,
+            progress_bar=validation_progress
+        )
         
         if not valid_combinations:
             st.warning("No valid ionic liquid combinations found.")
-            progress_bar.empty()
-            status_text.empty()
+            validation_status.empty()
+            validation_progress.empty()
             return [], []
         
-        status_text.write(f"✅ Found {len(valid_combinations)} valid combinations")
-        
         # Step 2: Calculate properties for valid combinations
+        calculation_status = st.empty()
+        calculation_progress = st.progress(0.0)
+        
         combinations = []
         total = len(valid_combinations)
         
         for i, combo in enumerate(valid_combinations):
             progress = (i + 1) / total
-            status_text.write(f"Calculating properties for combination {i+1}/{total}")
-            progress_bar.progress(progress)
+            calculation_status.write(f"Calculating properties for combination {i+1}/{total}")
+            calculation_progress.progress(progress)
             
             try:
                 # Calculate properties for this combination
@@ -197,7 +191,7 @@ def calculate_properties():
                 st.error(f"Error calculating properties for {combo['name']}: {str(e)}")
                 continue
         
-        status_text.write(f"✅ Calculated properties for {len(combinations)} combinations")
+        calculation_status.write(f"✅ Calculated properties for {len(combinations)} combinations")
         
         # Step 3: Get Pareto front
         with st.spinner("Calculating Pareto front..."):
@@ -216,11 +210,12 @@ def calculate_properties():
             for solution in pareto_front:
                 matching_combo = next(c for c in combinations if c['name'] == solution['name'])
                 solution['pareto_score'] = matching_combo['pareto_score']
-            
-            status_text.write(f"✅ Found {len(pareto_front)} Pareto-optimal solutions")
         
-        progress_bar.empty()
-        status_text.empty()
+        # Clean up progress indicators
+        validation_status.empty()
+        validation_progress.empty()
+        calculation_status.empty()
+        calculation_progress.empty()
         
         return combinations, pareto_front
         
@@ -511,163 +506,136 @@ def plot_property_distribution(combinations):
     return fig
 
 def display_results():
+    """Display optimization results"""
     st.title("Ionic Liquid Property Optimization")
     
-    # Create placeholders for progress indicators
-    status_text = st.empty()
-    progress_bar = st.progress(0)
+    # Calculate properties and get results
+    combinations, pareto_front = calculate_properties()
+    if not combinations:
+        return
     
-    try:
-        # Step 1: Get fragments
-        status_text.write("🔍 Generating valid ionic liquid combinations...")
-        fragments_data = get_filtered_fragments()
+    # Create tabs for different visualizations
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "Pareto Front", 
+        "Property Correlation",
+        "Property Distributions",
+        "Top Solutions",
+        "Statistics"
+    ])
+    
+    with tab1:
+        st.subheader("Property Distribution and Pareto Front")
+        fig_pareto = plot_pareto_front(combinations, pareto_front, st.session_state.property_ranges)
+    
+    with tab2:
+        st.subheader("Property Correlation Analysis")
+        plot_property_correlation(combinations)
+    
+    with tab3:
+        st.subheader("Property Distributions")
+        fig_dist = plot_property_distribution(combinations)
+        st.plotly_chart(fig_dist, use_container_width=True)
+    
+    with tab4:
+        st.subheader("Top Ionic Liquid Combinations")
         
-        # Create progress elements
-        status_text = st.empty()
-        progress_bar = st.progress(0.0)
+        # Add filters
+        col1, col2 = st.columns(2)
+        with col1:
+            min_score = st.slider(
+                "Minimum Pareto Score",
+                min_value=0.0,
+                max_value=1.0,
+                value=0.0,
+                step=0.1
+            )
+        with col2:
+            show_ilthermo = st.checkbox("Show only ILThermo validated", value=False)
         
-        # Calculate total possible combinations
-        total_possible = (len(fragments_data['cation']) * 
-                        len(fragments_data['anion']) * 
-                        len(fragments_data['alkyl_chain']))
+        # Filter solutions
+        filtered_solutions = [
+            sol for sol in pareto_front 
+            if sol.get('pareto_score', 0) >= min_score
+            and (not show_ilthermo or sol.get('in_ilthermo', False))
+        ]
         
-        # Generate valid combinations with progress tracking
-        valid_combinations = combine_fragments(status_text=status_text, progress_bar=progress_bar)
-        
-        if not valid_combinations:
-            st.warning("No valid ionic liquid combinations found.")
-            return
-        
-        status_text.write(f"✅ Found {len(valid_combinations)} valid combinations")
-        
-        # Calculate properties
-        combinations, pareto_front = calculate_properties()
-        if not combinations:
-            st.warning("No valid ionic liquid combinations found.")
-            return
-        
-        # Create tabs for different visualizations
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "Pareto Front", 
-            "Property Correlation",
-            "Property Distributions",
-            "Top Solutions",
-            "Statistics"
-        ])
-        
-        with tab1:
-            st.subheader("Property Distribution and Pareto Front")
-            fig_pareto = plot_pareto_front(combinations, pareto_front, st.session_state.property_ranges)
-        
-        with tab2:
-            st.subheader("Property Correlation Analysis")
-            plot_property_correlation(combinations)
-        
-        with tab3:
-            st.subheader("Property Distributions")
-            fig_dist = plot_property_distribution(combinations)
-            st.plotly_chart(fig_dist, use_container_width=True)
-        
-        with tab4:
-            st.subheader("Top Ionic Liquid Combinations")
+        # Display solutions in a table
+        if filtered_solutions:
+            solution_data = []
+            for sol in filtered_solutions[:10]:
+                solution_data.append({
+                    'Name': sol['name'],
+                    'Heat Capacity (J/mol·K)': f"{sol['heat_capacity']:.1f}",
+                    'Density (kg/m³)': f"{sol['density']:.1f}",
+                    'Toxicity (IC50 in mM)': f"{sol['toxicity']:.1f}",
+                    'Pareto Score': f"{sol.get('pareto_score', 0):.3f}",
+                    'In ILThermo': '✓' if sol.get('in_ilthermo', False) else '✗'
+                })
             
-            # Add filters
-            col1, col2 = st.columns(2)
-            with col1:
-                min_score = st.slider(
-                    "Minimum Pareto Score",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.0,
-                    step=0.1
-                )
-            with col2:
-                show_ilthermo = st.checkbox("Show only ILThermo validated", value=False)
-            
-            # Filter solutions
-            filtered_solutions = [
-                sol for sol in pareto_front 
-                if sol.get('pareto_score', 0) >= min_score
-                and (not show_ilthermo or sol.get('in_ilthermo', False))
-            ]
-            
-            # Display solutions in a table
-            if filtered_solutions:
-                solution_data = []
-                for sol in filtered_solutions[:10]:
-                    solution_data.append({
-                        'Name': sol['name'],
-                        'Heat Capacity (J/mol·K)': f"{sol['heat_capacity']:.1f}",
-                        'Density (kg/m³)': f"{sol['density']:.1f}",
-                        'Toxicity (IC50 in mM)': f"{sol['toxicity']:.1f}",
-                        'Pareto Score': f"{sol.get('pareto_score', 0):.3f}",
-                        'In ILThermo': '✓' if sol.get('in_ilthermo', False) else '✗'
-                    })
-                
-                st.dataframe(
-                    solution_data,
-                    use_container_width=True,
-                    hide_index=True
-                )
-            else:
-                st.warning("No solutions match the current filters.")
+            st.dataframe(
+                solution_data,
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.warning("No solutions match the current filters.")
 
-        with tab5:
-            st.subheader("Optimization Statistics")
+    with tab5:
+        st.subheader("Optimization Statistics")
+        
+        # Create three columns for statistics
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Total Combinations", len(combinations))
+            st.metric("Pareto-optimal Solutions", len(pareto_front))
+            st.metric("ILThermo Validated", sum(1 for s in combinations if s.get('in_ilthermo', False)))
+        
+        with col2:
+            # Calculate property ranges in the results
+            density_range = (
+                min(s['density'] for s in combinations),
+                max(s['density'] for s in combinations)
+            )
+            cp_range = (
+                min(s['heat_capacity'] for s in combinations),
+                max(s['heat_capacity'] for s in combinations)
+            )
+            toxicity_range = (
+                min(s['toxicity'] for s in combinations),
+                max(s['toxicity'] for s in combinations)
+            )
             
-            # Create three columns for statistics
-            col1, col2, col3 = st.columns(3)
+            st.write("Property Ranges Found:")
+            st.write(f"Density: {density_range[0]:.1f} - {density_range[1]:.1f} kg/m³")
+            st.write(f"Heat Capacity: {cp_range[0]:.1f} - {cp_range[1]:.1f} J/mol·K")
+            st.write(f"Toxicity: {toxicity_range[0]:.1f} - {toxicity_range[1]:.1f} mM")
+        
+        with col3:
+            # Calculate fragment usage statistics
+            cation_usage = {}
+            anion_usage = {}
+            alkyl_usage = {}
             
-            with col1:
-                st.metric("Total Combinations", len(combinations))
-                st.metric("Pareto-optimal Solutions", len(pareto_front))
-                st.metric("ILThermo Validated", sum(1 for s in combinations if s.get('in_ilthermo', False)))
-            
-            with col2:
-                # Calculate property ranges in the results
-                density_range = (
-                    min(s['density'] for s in combinations),
-                    max(s['density'] for s in combinations)
-                )
-                cp_range = (
-                    min(s['heat_capacity'] for s in combinations),
-                    max(s['heat_capacity'] for s in combinations)
-                )
-                toxicity_range = (
-                    min(s['toxicity'] for s in combinations),
-                    max(s['toxicity'] for s in combinations)
-                )
+            for combo in combinations:
+                cation_name = combo['cation']  # Already a string
+                anion_name = combo['anion']    # Already a string
+                alkyl_name = combo['alkyl_chain']  # Already a string
                 
-                st.write("Property Ranges Found:")
-                st.write(f"Density: {density_range[0]:.1f} - {density_range[1]:.1f} kg/m³")
-                st.write(f"Heat Capacity: {cp_range[0]:.1f} - {cp_range[1]:.1f} J/mol·K")
-                st.write(f"Toxicity: {toxicity_range[0]:.1f} - {toxicity_range[1]:.1f} mM")
+                cation_usage[cation_name] = cation_usage.get(cation_name, 0) + 1
+                anion_usage[anion_name] = anion_usage.get(anion_name, 0) + 1
+                alkyl_usage[alkyl_name] = alkyl_usage.get(alkyl_name, 0) + 1
             
-            with col3:
-                # Calculate fragment usage statistics
-                cation_usage = {}
-                anion_usage = {}
-                alkyl_usage = {}
-                
-                for combo in combinations:
-                    cation_name = combo['cation']  # Already a string
-                    anion_name = combo['anion']    # Already a string
-                    alkyl_name = combo['alkyl_chain']  # Already a string
-                    
-                    cation_usage[cation_name] = cation_usage.get(cation_name, 0) + 1
-                    anion_usage[anion_name] = anion_usage.get(anion_name, 0) + 1
-                    alkyl_usage[alkyl_name] = alkyl_usage.get(alkyl_name, 0) + 1
-                
-                st.write("Most Used Fragments:")
-                st.write("Cations:")
-                for cation, count in sorted(cation_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
-                    st.write(f"  {cation}: {count}")
-                st.write("\nAnions:")
-                for anion, count in sorted(anion_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
-                    st.write(f"  {anion}: {count}")
-                st.write("\nAlkyl Chains:")
-                for alkyl, count in sorted(alkyl_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
-                    st.write(f"  {alkyl}: {count}")
+            st.write("Most Used Fragments:")
+            st.write("Cations:")
+            for cation, count in sorted(cation_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
+                st.write(f"  {cation}: {count}")
+            st.write("\nAnions:")
+            for anion, count in sorted(anion_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
+                st.write(f"  {anion}: {count}")
+            st.write("\nAlkyl Chains:")
+            for alkyl, count in sorted(alkyl_usage.items(), key=lambda x: x[1], reverse=True)[:3]:
+                st.write(f"  {alkyl}: {count}")
         
         # Summary statistics in sidebar
         st.sidebar.subheader("Quick Summary")
@@ -697,10 +665,6 @@ def display_results():
                 key='download-csv'
             )
         
-    except Exception as e:
-        st.error(f"Error calculating properties: {str(e)}")
-        raise e
-
 # Main UI layout
 st.set_page_config(page_title="Ionic Liquid Optimizer", layout="wide")
 

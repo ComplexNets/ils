@@ -118,9 +118,12 @@ def validate_combination(combination_tuple, validator=None):
         }
     return None
 
-def combine_fragments() -> List[Dict]:
+def combine_fragments(status_text=None, progress_bar=None) -> List[Dict]:
     """
     Combines fragments into valid ionic liquid combinations using parallel processing.
+    Args:
+        status_text: Streamlit text element for status updates
+        progress_bar: Streamlit progress bar element
     Returns:
         List of valid ionic liquid combinations
     """
@@ -135,8 +138,13 @@ def combine_fragments() -> List[Dict]:
             fragments_data['alkyl_chain']
         ))
         
+        total_combinations = len(combinations)
+        if status_text:
+            status_text.write(f"Validating combinations: 0/{total_combinations}")
+        
         # Process combinations in parallel
         valid_combinations = []
+        processed = 0
         
         # Use ThreadPoolExecutor instead of ProcessPoolExecutor for Streamlit compatibility
         with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
@@ -146,10 +154,19 @@ def combine_fragments() -> List[Dict]:
             
             # Process results as they complete
             for future in concurrent.futures.as_completed(future_to_combo):
+                processed += 1
+                if status_text and progress_bar:
+                    progress = processed / total_combinations
+                    progress_bar.progress(progress)
+                    status_text.write(f"Validating combinations: {processed}/{total_combinations}")
+                
                 # Get the result
                 result = future.result()
                 if result is not None:
                     valid_combinations.append(result)
+        
+        if status_text:
+            status_text.write(f"✅ Found {len(valid_combinations)} valid combinations")
         
         return valid_combinations
     
