@@ -1,9 +1,34 @@
 # Ionic Liquid Screening (ILS) Project Summary
 
-TIME_STAMP - 11-24-24-1300hrs
+TIME_STAMP - 11-25-23-1500hrs
 
 ## Project Overview
 The ILS project is a comprehensive tool for designing and optimizing ionic liquids through fragment-based combination and multi-objective optimization. The system combines molecular fragments to create valid ionic liquids, calculates their properties, and uses Pareto optimization to identify the most promising candidates.
+
+## Recent Updates (11-25-23)
+
+### 1. Enhanced Statistics Display
+- Added clear distinction between total feasible ILs and those within property ranges
+- New metrics displayed:
+  - Total Feasible ILs: Shows chemically valid combinations before property filtering
+  - Valid ILs (In Range): Shows combinations meeting user-specified property constraints
+  - ILThermo Validated: Shows combinations found in ILThermo database
+
+### 2. Improved Visualization
+- Enhanced scatter plot matrix with:
+  - IL names in hover text
+  - Property values formatted to 2 decimal places
+  - White markers with gray outlines for better visibility
+- Updated parallel coordinates plot:
+  - Changed to white lines for better visibility
+  - Simplified display for clearer visualization
+
+### 3. Process Transparency
+- Added tracking of structurally feasible combinations
+- Clear distinction between:
+  - Initial combinations (e.g., 96 total possible)
+  - Structurally feasible (e.g., 80 valid structures)
+  - Property-filtered (combinations meeting user ranges)
 
 ## Core Components
 
@@ -38,19 +63,20 @@ The ILS project is a comprehensive tool for designing and optimizing ionic liqui
 ### Visualization Capabilities
 1. **Parallel Coordinates**:
    - Log-scale handling for wide-ranging properties (e.g., IC50)
-   - Color coding for Pareto vs non-Pareto solutions
+   - White lines for better visibility
    - Interactive property range selection
 
-2. **Radar Plot**:
-   - Up to 5 solutions comparison
-   - Normalized property visualization
-   - Dynamic solution selection
+2. **Scatter Plot Matrix**:
+   - IL name and property value hover information
+   - Enhanced marker visibility
+   - Interactive point selection
 
 ### Optimization Process
 1. **Fragment Screening**:
-   - Initial filtering based on simple property addition
-   - Chemical validity checks
-   - Database property lookup with RDKit fallback
+   - Two-stage filtering process:
+     1. Chemical validity checks (structural feasibility)
+     2. Property range validation
+   - Clear reporting of results at each stage
 
 2. **Pareto Optimization**:
    - Weighted multi-objective optimization
@@ -70,9 +96,9 @@ The ILS project is a comprehensive tool for designing and optimizing ionic liqui
 - Optimized property calculation pipeline
 
 ### Visualization Design
-- Consistent color schemes
-- Interactive elements for exploration
-- Clear property labeling and units
+- Enhanced hover information
+- Improved marker visibility
+- Clear statistics display
 
 ## Future Development Areas
 1. Additional property prediction models
@@ -84,6 +110,6 @@ The ILS project is a comprehensive tool for designing and optimizing ionic liqui
 ## Usage Instructions
 1. Configure property ranges and weights
 2. Run fragment combination and screening
-3. Review Pareto-optimal solutions
+3. Review both feasible and property-filtered solutions
 4. Explore solutions through interactive visualizations
 5. Export selected candidates for further analysis

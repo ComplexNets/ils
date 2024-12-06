@@ -7,15 +7,24 @@ from typing import Dict, List, Tuple
 from utils.validation_rules import MolecularValidator
 from utils.utils import (generate_il_name, is_in_il_thermo, get_molecular_weight, 
                        get_fragment_properties)
-from models.shortList_frag import fragments
+from models import shortList_frag, longList_frag
 import concurrent.futures
 import multiprocessing
 from functools import partial
 from itertools import product
 
-def get_filtered_fragments() -> Dict:
-    """Get fragments from shortList_frag.py"""
+def get_filtered_fragments(list_name: str = 'short') -> Dict:
+    """
+    Get fragments from specified list (short or long)
+    Args:
+        list_name: Name of fragment list to use ('short' or 'long')
+    Returns:
+        Dictionary of filtered fragments by type
+    """
     fragments_data = {'cation': [], 'anion': [], 'alkyl_chain': []}
+    
+    # Get fragments from selected list
+    fragments = shortList_frag.fragments if list_name == 'short' else longList_frag.fragments
     
     print("\nGetting fragment properties:")
     for fragment in fragments:
@@ -118,18 +127,19 @@ def validate_combination(combination_tuple, validator=None):
         }
     return None
 
-def combine_fragments(status_text=None, progress_bar=None) -> List[Dict]:
+def combine_fragments(status_text=None, progress_bar=None, list_name: str = 'short') -> List[Dict]:
     """
     Combines fragments into valid ionic liquid combinations using parallel processing.
     Args:
         status_text: Streamlit text element for status updates
         progress_bar: Streamlit progress bar element
+        list_name: Name of fragment list to use ('short' or 'long')
     Returns:
         List of valid ionic liquid combinations
     """
     try:
         # Get all fragments with properties
-        fragments_data = get_filtered_fragments()
+        fragments_data = get_filtered_fragments(list_name)
         
         # Create all possible combinations
         combinations = list(product(
@@ -176,5 +186,14 @@ def combine_fragments(status_text=None, progress_bar=None) -> List[Dict]:
 
 if __name__ == "__main__":
     print("\n=== Testing Fragment Combination ===\n")
-    combinations = combine_fragments()
-    print(f"\nFound {len(combinations)} valid combinations")
+    
+    # Let user choose fragment list
+    available_lists = ['short', 'long']
+    print(f"Available fragment lists: {', '.join(available_lists)}")
+    list_choice = input("Enter fragment list to use (short/long): ").lower()
+    
+    try:
+        combinations = combine_fragments(list_name=list_choice)
+        print(f"\nFound {len(combinations)} valid combinations")
+    except ValueError as e:
+        print(f"Error: {str(e)}")

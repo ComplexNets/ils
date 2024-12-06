@@ -6,7 +6,6 @@ from utils.utils import get_fragment_properties
 
 # Constants for chemical rules
 MAX_BOND_CAPACITY = 4  # Maximum total bond capacity
-OCTET_TOTAL = 8  # Octet rule requirement
 
 class MolecularValidator:
     """Validates ionic liquid combinations based on chemical rules"""
