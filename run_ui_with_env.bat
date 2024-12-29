@@ -1,8 +1,8 @@
 @echo off
 echo Checking Python environment...
 
-REM Activate conda environment if it exists
-call conda activate ils 2>nul
+REM Activate conda environment using full path
+call C:\Users\X1\miniconda3\Scripts\activate.bat ils 2>nul
 if %errorlevel% equ 0 (
     echo Successfully activated 'ils' conda environment
 ) else (

@@ -108,11 +108,18 @@ def validate_combination(combination_tuple, validator=None):
         validator = MolecularValidator()
         
     cation, anion, alkyl = combination_tuple
+    print(f"\nDEBUG: Validating combination:")
+    print(f"DEBUG: Cation: {cation['name']} ({cation['smiles']})")
+    print(f"DEBUG: Anion: {anion['name']} ({anion['smiles']})")
+    print(f"DEBUG: Alkyl: {alkyl['name']} ({alkyl['smiles']})")
+    
     is_valid, message = validator.validate(cation, anion, alkyl)
+    print(f"DEBUG: Validation result: {message}")
     
     if is_valid:
         # Generate the IL name
         il_name = generate_il_name(cation, anion, alkyl)
+        print(f"DEBUG: Generated valid IL: {il_name}")
         
         # Check if this IL exists in ILThermo
         in_ilthermo = is_in_il_thermo(il_name)
