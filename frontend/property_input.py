@@ -11,6 +11,17 @@ class PropertyCriteria:
     unit: str
     optimize_higher: bool = True  # True if higher values are better, False if lower values are better
 
+@dataclass
+class ValidationCriteria:
+    """Criteria for validating ionic liquid structures"""
+    max_groups_per_chain: int = 6  # Default max groups allowed in an alkyl chain
+    max_groups_per_type: int = 2   # Default max groups of a specific type allowed
+    max_chain_length: int = 12     # Default max chain length
+    min_chain_length: int = 1      # Default min chain length
+    group_occurrence_upper: int = 3  # t1: Upper limit on group occurrences (Eq. 19)
+    group_occurrence_lower: int = 0  # t2: Lower limit on group occurrences (Eq. 20)
+    group_occurrence_exact: int = -1  # t3: Exact occurrence requirement, -1 means not enforced (Eq. 21)
+
 class PropertyRanges:
     def __init__(self):
         self.properties = {
@@ -33,6 +44,7 @@ class PropertyRanges:
                 optimize_higher=True  # Higher IC50 means less toxic
             )
         }
+        self.validation = ValidationCriteria()
 
     def update_property(self, property_name: str, range_values: tuple, weight: float = None, optimize_higher: bool = True):
         """Update a property's range, importance and optimization direction

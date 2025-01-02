@@ -65,6 +65,82 @@ def get_user_ranges():
     
     st.sidebar.header("Property Ranges")
     
+    # Add Validation Settings
+    st.sidebar.header("Structure Validation Settings")
+    with st.sidebar.expander("Alkyl Chain Constraints", expanded=False):
+        # Max groups per chain
+        max_groups = st.number_input(
+            "Max Groups per Chain",
+            min_value=1,
+            max_value=20,
+            value=prop_ranges.validation.max_groups_per_chain,
+            help="Maximum number of functional groups allowed in an alkyl chain"
+        )
+        prop_ranges.validation.max_groups_per_chain = max_groups
+        
+        # Max groups per type
+        max_type_groups = st.number_input(
+            "Max Groups per Type",
+            min_value=1,
+            max_value=10,
+            value=prop_ranges.validation.max_groups_per_type,
+            help="Maximum number of groups of a specific type allowed in a chain"
+        )
+        prop_ranges.validation.max_groups_per_type = max_type_groups
+        
+        # Chain length constraints
+        col1, col2 = st.columns(2)
+        with col1:
+            min_length = st.number_input(
+                "Min Chain Length",
+                min_value=1,
+                max_value=20,
+                value=prop_ranges.validation.min_chain_length,
+                help="Minimum number of carbon atoms in chain"
+            )
+            prop_ranges.validation.min_chain_length = min_length
+        with col2:
+            max_length = st.number_input(
+                "Max Chain Length",
+                min_value=1,
+                max_value=20,
+                value=prop_ranges.validation.max_chain_length,
+                help="Maximum number of carbon atoms in chain"
+            )
+            prop_ranges.validation.max_chain_length = max_length
+            
+        # Group occurrence constraints
+        st.markdown("#### Group Occurrence Constraints")
+        col1, col2 = st.columns(2)
+        with col1:
+            upper_limit = st.number_input(
+                "Upper Limit (t1)",
+                min_value=0,
+                max_value=10,
+                value=prop_ranges.validation.group_occurrence_upper,
+                help="Maximum number of occurrences of any group (Eq. 19)"
+            )
+            prop_ranges.validation.group_occurrence_upper = upper_limit
+            
+            lower_limit = st.number_input(
+                "Lower Limit (t2)",
+                min_value=0,
+                max_value=10,
+                value=prop_ranges.validation.group_occurrence_lower,
+                help="Minimum number of occurrences of any group (Eq. 20)"
+            )
+            prop_ranges.validation.group_occurrence_lower = lower_limit
+        
+        with col2:
+            exact_count = st.number_input(
+                "Exact Count (t3)",
+                min_value=-1,
+                max_value=10,
+                value=prop_ranges.validation.group_occurrence_exact,
+                help="Exact number of occurrences required (-1 to disable) (Eq. 21)"
+            )
+            prop_ranges.validation.group_occurrence_exact = exact_count
+    
     # Density range (kg/m³)
     st.sidebar.subheader("Density (kg/m³)")
     density_col1, density_col2, density_col3 = st.sidebar.columns(3)
@@ -293,23 +369,14 @@ def calculate_properties():
                 print(f"Error calculating properties for {combo['name']}: {str(e)}")
                 continue
         
-        calculation_status.empty()
-        calculation_progress.empty()
-        
         # Store the results in session state
         st.session_state.combinations = combinations
         st.session_state.total_feasible = total_feasible
         
         if not combinations:
             st.warning("No combinations found within the specified property ranges.")
-            validation_status.empty()
-            validation_progress.empty()
-            calculation_status.empty()
-            calculation_progress.empty()
             st.stop()
-        
-        calculation_status.write(f"✅ Found {len(combinations)} combinations within specified ranges")
-        
+            
         # Step 3: Get Pareto front
         with st.spinner("Calculating Pareto front..."):
             pareto_front = st.session_state.optimizer.get_pareto_front(combinations)
@@ -328,11 +395,8 @@ def calculate_properties():
                 matching_combo = next(c for c in combinations if c['name'] == solution['name'])
                 solution['pareto_score'] = matching_combo['pareto_score']
         
-        # Clean up progress indicators
-        validation_status.empty()
-        validation_progress.empty()
-        calculation_status.empty()
-        calculation_progress.empty()
+        # Set final status message
+        calculation_status.write(f"✅ Found {len(combinations)} combinations within specified ranges")
         
         return combinations, pareto_front
         
