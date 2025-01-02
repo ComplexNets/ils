@@ -15,7 +15,10 @@ class MolecularValidator:
         """Initialize validator"""
         pass
 
-    """Eqs. 12 and 13 ensures a maximum of one cation base and one anion, respectively, for each IL candidate."""
+# Cation and Anion Base Count
+# Equations 12 and 13
+# Purpose: Ensures a maximum of one cation base and one anion, respectively, for each IL candidate.
+
     def _get_anion_cation_count(self, fragments: List[Dict], fragment_type: str) -> int:
         """Get the count of fragments of a specific type"""
         return sum(1 for fragment in fragments if fragment.get('fragment_type', '').lower() == fragment_type)
@@ -33,8 +36,12 @@ class MolecularValidator:
             return False, f"Invalid number of cations: {cation_count} (must be 1)"
         if anion_count != 1:
             return False, f"Invalid number of anions: {anion_count} (must be 1)"
+
         return True, "Valid fragment counts"
-    
+# Alkyl Chain Count
+# Equation 14
+# Purpose: Fixes number of alkyl side chains based on cation valence
+
     def _get_valence_from_smiles(self, smiles: str) -> List[Dict]:
         """Get valence information for each atom in a SMILES string.
         
@@ -140,7 +147,14 @@ class MolecularValidator:
         
         print(f"DEBUG: Valid alkyl chain count")
         return True, f"Valid number of alkyl chains ({alkyl_chain_count}) for available attachment points ({available_points})"
-    
+   
+    # OCTET RULE
+    # Equation 15
+    # Ensures valence balance in the molecule
+
+
+
+
     def _get_fragment_bond_capacity(self, fragment: Dict) -> int:
         """Get fragment bond capacity based on properties"""
         props = get_fragment_properties(fragment['name'], fragment['fragment_type'])
