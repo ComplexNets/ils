@@ -1,0 +1,124 @@
+Ionic Liquid Property Calculation Methods Summary
+
+This document provides a detailed overview of the calculation methods used in the ionic liquid simulation (ILS) project.
+
+1. TOXICITY CALCULATIONS (toxicity.py)
+-------------------------------------
+Method: Molecular Descriptor Based Approach
+The toxicity calculation uses a combination of molecular descriptors to predict the toxicity of ionic liquids:
+
+Key Descriptors Used:
+- Molecular Weight (MW)
+- LogP (Octanol-water partition coefficient)
+- Topological Polar Surface Area (TPSA)
+- Rotatable Bond Count
+- Hydrogen Bond Donors/Acceptors Count
+
+The method combines these descriptors with weighted contributions:
+- MW: 30% (larger molecules tend to be more toxic)
+- LogP: 30% (higher logP correlates with higher toxicity)
+- TPSA: 20% (relates to membrane permeability)
+- Rotatable Bonds: 10% (flexibility affects bioavailability)
+- H-bonding: 10% (affects interaction with biomolecules)
+
+The final toxicity is expressed as an IC50 value (0.1 mM to 100 mM range), where higher values indicate lower toxicity.
+
+2. DENSITY CALCULATIONS (density.py)
+----------------------------------
+Method: Modified Ye & Shreeve Method with Gardas & Coutinho Temperature Correction
+
+Key Components:
+a) Atomic Volume Contributions:
+   - Uses updated atomic volumes (in Å³) for different elements
+   - Special handling for different hybridization states (sp3, sp2, sp)
+   - Includes ionic radii corrections for halides
+
+b) Environmental Corrections:
+   - Aromatic systems: 0.97 factor
+   - Conjugated systems: 0.98 factor
+   - Charged species: 0.95 factor
+   - H-bonding: 0.96 factor
+   - Halide anions: 1.15 factor
+
+c) Temperature Correction (Gardas & Coutinho):
+   - α (thermal expansion coefficient): 6.652×10⁻⁴ K⁻¹
+   - β (isothermal compressibility): -5.919×10⁻⁴ MPa⁻¹
+   - Reference conditions: 298.15 K, 0.1 MPa
+
+3. HEAT CAPACITY CALCULATIONS (heat_capacity.py)
+---------------------------------------------
+Method: UNIFAC-based Group Contribution with Literature Correlations
+
+Components:
+a) UNIFAC Group Parameters:
+   - Imidazolium core (IM+)
+   - Pyridinium core (PY+)
+   - Common anions (BF4-, PF6-, NTf2-, SCN-, DCA-)
+   - Alkyl groups (CH2, CH3)
+
+b) Contribution Factors:
+   - Molecular weight contribution: 0.92 × MW
+   - Heavy atom contribution: 4.8 × number of heavy atoms
+   - Rotatable bond contribution: 2.8 × number of rotatable bonds
+   - H-bond contribution: 1.8 × donors + 0.9 × acceptors
+
+c) Fragment-specific Adjustments:
+   - Cations: 1.15 factor
+   - Anions: 1.05 factor (0.95 for NTf2)
+   - Alkyl chains: 0.95 factor
+
+4. PARETO OPTIMIZATION (pareto_optimizer.py)
+-----------------------------------------
+The Pareto optimizer implements multi-objective optimization for ionic liquid properties:
+
+Key Features:
+- Handles multiple property constraints simultaneously
+- Normalizes properties to [0,1] range
+- Supports weighted scoring for property importance
+- Identifies Pareto-optimal solutions using weighted dominance comparison
+- Allows specification of optimization direction (maximize/minimize)
+
+The optimizer uses a weighted scoring system to:
+1. Normalize each property value
+2. Apply importance weights
+3. Calculate overall scores
+4. Identify non-dominated solutions
+5. Sort solutions by weighted score
+
+This multi-objective approach allows for finding optimal ionic liquid combinations that balance multiple desired properties simultaneously.
+
+5. VALIDATION RULES (validation_rules.py)
+----------------------------------------
+The validation system ensures chemical feasibility of ionic liquid combinations through several key checks:
+
+Key Components:
+a) Molecular Validator:
+   - Valence Balance Check:
+     * Cations: +1 charge
+     * Anions: -1 charge
+     * Alkyl chains: 0 charge
+     * Total valence must sum to 0
+
+b) Chemical Rules Constants:
+   - Maximum Bond Capacity: 4 bonds
+   - Octet Rule: 8 electrons
+
+c) Fragment Property Validation:
+   - Checks for existence of required properties
+   - Validates molecular structure feasibility
+   - Ensures proper fragment type assignment
+
+d) Combination Generation:
+   The system generates valid combinations by:
+   1. Separating fragments by type (cation, anion, alkyl chain)
+   2. Creating all possible combinations
+   3. Validating each combination against chemical rules
+   4. Only retaining combinations that pass all validation checks
+
+This validation ensures that:
+- All components have valid properties
+- The ionic liquid maintains charge neutrality
+- Chemical bonding rules are satisfied
+- The resulting structure is physically feasible
+
+The validation system works in conjunction with the property calculations and optimization to ensure that only chemically valid ionic liquids are considered in the final results.
