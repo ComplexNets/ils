@@ -655,20 +655,13 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         st.warning("No valid combinations found.")
         st.stop()
     
-    # Create tabs for different visualizations
+    # Create tabs for different visualizations and analysis
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Pareto Front", 
-        "Property Correlation",
-        "Property Distributions",
-        "Top Solutions",
-        "Statistics"
+        "Parallel Coordinates", "Property Correlation", 
+        "Property Distributions", "Lead Ionic Liquids", "Statistics"
     ])
-    
+
     with tab1:
-        st.subheader("Property Distribution and Pareto Front")
-        # Create Pareto front visualizations
-        st.subheader("Multi-Property Visualization")
-        
         # Helper function for normalization
         def get_normalized_range(values):
             min_val = min(values) if values else 0
@@ -678,171 +671,87 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                 min_val = min_val - 0.5
                 max_val = max_val + 0.5
             return min_val, max_val
+
+        # Parallel coordinates plot
+        fig_parallel = go.Figure()
         
-        # Create tabs for different visualization types
-        viz_tab1, viz_tab2 = st.tabs(["Parallel Coordinates", "Radar Plot"])
+        # Get global min/max for each property across all combinations
+        property_ranges = {}
+        for prop_name in st.session_state.property_ranges.properties:
+            values = [c[prop_name] for c in combinations]
+            property_ranges[prop_name] = get_normalized_range(values)
         
-        with viz_tab1:
-            # Parallel coordinates plot
-            fig_parallel = go.Figure()
-            
-            # Get global min/max for each property across all combinations
-            property_ranges = {}
-            for prop_name in st.session_state.property_ranges.properties:
-                values = [c[prop_name] for c in combinations]
-                property_ranges[prop_name] = get_normalized_range(values)
-            
-            # Add non-Pareto solutions
-            non_pareto = [c for c in combinations if c not in pareto_front]
-            if non_pareto:
-                dims = []
-                for prop_name, prop in st.session_state.property_ranges.properties.items():
-                    values = [c[prop_name] for c in non_pareto]
-                    min_val, max_val = property_ranges[prop_name]
-                    
-                    if prop_name == 'toxicity':
-                        # For toxicity (IC50), use log scale since values can span orders of magnitude
-                        # Higher IC50 = lower toxicity = better
-                        log_values = [math.log10(max(v, 0.1)) for v in values]  # Use 0.1 mM as minimum to avoid log(0)
-                        log_min = math.log10(0.1)  # 0.1 mM minimum
-                        log_max = math.log10(100)  # 100 mM maximum
-                        dims.append(dict(range=[log_min, log_max],
-                                   label=f"{prop_name} (IC50, mM)",
-                                   values=log_values,
-                                   ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
-                                   tickvals=list(range(int(log_min), int(log_max)+1))))
-                    else:
-                        # Scale other properties normally
-                        scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
-                        dims.append(dict(range=[0, 1],
-                                   label=f"{prop_name} ({prop.unit})",
-                                   values=scaled_values))
-                
-                fig_parallel.add_trace(go.Parcoords(
-                    line=dict(color='rgba(128,128,128,0.3)',
-                             colorscale=[[0, 'rgba(128,128,128,0.3)'], 
-                                       [1, 'rgba(128,128,128,0.3)']]),
-                    dimensions=dims
-                ))
-            
-            # Add Pareto solutions
-            if pareto_front:
-                dims = []
-                for prop_name, prop in st.session_state.property_ranges.properties.items():
-                    values = [c[prop_name] for c in pareto_front]
-                    min_val, max_val = property_ranges[prop_name]
-                    
-                    if prop_name == 'toxicity':
-                        # For toxicity (IC50), use log scale normalization
-                        log_values = [math.log10(max(v, 0.1)) for v in values]
-                        log_min = math.log10(0.1)
-                        log_max = math.log10(100)
-                        dims.append(dict(range=[log_min, log_max],
-                                   label=f"{prop_name} (IC50, mM)",
-                                   values=log_values,
-                                   ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
-                                   tickvals=list(range(int(log_min), int(log_max)+1))))
-                    else:
-                        # Scale other properties normally
-                        scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
-                        dims.append(dict(range=[0, 1],
-                                   label=f"{prop_name} ({prop.unit})",
-                                   values=scaled_values))
-                
-                fig_parallel.add_trace(go.Parcoords(
-                    line=dict(color='rgba(0,128,255,1)',
-                             colorscale=[[0, 'rgba(0,128,255,1)'], 
-                                       [1, 'rgba(0,128,255,1)']]),
-                    dimensions=dims,
-                    name='Pareto Solutions'
-                ))
-            
-            fig_parallel.update_layout(
-                title="Parallel Coordinates Plot of Properties",
-                height=600,
-                showlegend=True
-            )
-            st.plotly_chart(fig_parallel, use_container_width=True)
-        
-        with viz_tab2:
-            if not pareto_front:
-                st.write("No Pareto solutions available for visualization")
-                st.stop()
-            
-            num_solutions = min(5, len(pareto_front))
-            selected_indices = st.multiselect(
-                "Select solutions to compare (max 5)",
-                range(len(pareto_front)),
-                default=range(min(3, num_solutions)),
-                format_func=lambda x: f"Solution {x+1}: {pareto_front[x].get('name', f'Combination {x+1}')}",
-                key="pareto_solutions"
-            )
-            
-            # Create figure container
-            fig_radar = go.Figure()
-            
-            # Get labels for the radar plot (do this once, outside the loop)
-            labels = []
+        # Add non-Pareto solutions
+        non_pareto = [c for c in combinations if c not in pareto_front]
+        if non_pareto:
+            dims = []
             for prop_name, prop in st.session_state.property_ranges.properties.items():
-                if prop_name == 'toxicity':
-                    labels.append(f"{prop_name}\n(IC50, mM)")
-                else:
-                    labels.append(f"{prop_name}\n({prop.unit})")
-            
-            if selected_indices:
-                # Get global min/max for each property across all combinations
-                property_ranges = {}
-                for prop_name in st.session_state.property_ranges.properties:
-                    values = [c[prop_name] for c in combinations]
-                    property_ranges[prop_name] = get_normalized_range(values)
+                values = [c[prop_name] for c in non_pareto]
+                min_val, max_val = property_ranges[prop_name]
                 
-                for idx in selected_indices:
-                    solution = pareto_front[idx]
-                    values = []
-                    
-                    for prop_name, prop in st.session_state.property_ranges.properties.items():
-                        val = solution[prop_name]
-                        min_val, max_val = property_ranges[prop_name]
-                        
-                        if prop_name == 'toxicity':
-                            # For toxicity (IC50), use log scale normalization
-                            log_val = math.log10(max(val, 0.1))
-                            log_min = math.log10(0.1)
-                            log_max = math.log10(100)
-                            norm_val = (log_val - log_min) / (log_max - log_min)
-                        else:
-                            if min_val == max_val:
-                                norm_val = 1.0
-                            else:
-                                norm_val = (val - min_val) / (max_val - min_val)
-                        
-                        values.append(norm_val)
-                    
-                    fig_radar.add_trace(go.Scatterpolar(
-                        r=values,
-                        theta=labels,
-                        name=solution.get('name', f'Solution {idx+1}'),
-                        fill='toself'
-                    ))
-            else:
-                # Add an empty trace to keep the plot structure
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=[0] * len(labels),
-                    theta=labels,
-                    showlegend=False
-                ))
+                if prop_name == 'toxicity':
+                    # For toxicity (IC50), use log scale since values can span orders of magnitude
+                    # Higher IC50 = lower toxicity = better
+                    log_values = [math.log10(max(v, 0.1)) for v in values]  # Use 0.1 mM as minimum to avoid log(0)
+                    log_min = math.log10(0.1)  # 0.1 mM minimum
+                    log_max = math.log10(100)  # 100 mM maximum
+                    dims.append(dict(range=[log_min, log_max],
+                               label=f"{prop_name} (IC50, mM)",
+                               values=log_values,
+                               ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
+                               tickvals=list(range(int(log_min), int(log_max)+1))))
+                else:
+                    # Scale other properties normally
+                    scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
+                    dims.append(dict(range=[0, 1],
+                               label=f"{prop_name} ({prop.unit})",
+                               values=scaled_values))
             
-            # Always update layout
-            fig_radar.update_layout(
-                polar=dict(
-                    radialaxis=dict(visible=True, range=[0, 1], 
-                                  ticktext=['0%', '25%', '50%', '75%', '100%'],
-                                  tickvals=[0, 0.25, 0.5, 0.75, 1])
-                ),
-                showlegend=True,
-                title="Radar Plot of Selected Solutions"
-            )
-            st.plotly_chart(fig_radar, use_container_width=True)
+            fig_parallel.add_trace(go.Parcoords(
+                line=dict(color='rgba(128,128,128,0.3)',
+                         colorscale=[[0, 'rgba(128,128,128,0.3)'], 
+                                   [1, 'rgba(128,128,128,0.3)']]),
+                dimensions=dims
+            ))
+        
+        # Add Pareto solutions
+        if pareto_front:
+            dims = []
+            for prop_name, prop in st.session_state.property_ranges.properties.items():
+                values = [c[prop_name] for c in pareto_front]
+                min_val, max_val = property_ranges[prop_name]
+                
+                if prop_name == 'toxicity':
+                    # For toxicity (IC50), use log scale normalization
+                    log_values = [math.log10(max(v, 0.1)) for v in values]
+                    log_min = math.log10(0.1)
+                    log_max = math.log10(100)
+                    dims.append(dict(range=[log_min, log_max],
+                               label=f"{prop_name} (IC50, mM)",
+                               values=log_values,
+                               ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
+                               tickvals=list(range(int(log_min), int(log_max)+1))))
+                else:
+                    # Scale other properties normally
+                    scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
+                    dims.append(dict(range=[0, 1],
+                               label=f"{prop_name} ({prop.unit})",
+                               values=scaled_values))
+            
+            fig_parallel.add_trace(go.Parcoords(
+                line=dict(color='rgba(0,128,255,1)',
+                         colorscale=[[0, 'rgba(0,128,255,1)'], 
+                                   [1, 'rgba(0,128,255,1)']]),
+                dimensions=dims,
+                name='Pareto Solutions'
+            ))
+        
+        fig_parallel.update_layout(
+            title="Parallel Coordinates Plot of Properties",
+            height=600,
+            showlegend=True
+        )
+        st.plotly_chart(fig_parallel, use_container_width=True)
 
     with tab2:
         st.subheader("Property Correlation Analysis")
@@ -969,31 +878,16 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         st.plotly_chart(fig, use_container_width=True)
 
     with tab4:
-        st.subheader("Top Ionic Liquid Combinations")
+        st.subheader("Lead Ionic Liquids")
         
-        # Add filters
-        col1, col2 = st.columns(2)
-        with col1:
-            min_score = st.slider(
-                "Minimum Pareto Score",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.0,
-                step=0.1,
-                key="min_pareto_score"
-            )
-        with col2:
-            show_ilthermo = st.checkbox("Show only ILThermo validated", value=False, key="show_ilthermo")
+        # Add ILThermo validation filter
+        st.checkbox("Show only ILThermo validated", key="show_validated")
         
-        # Filter solutions
-        filtered_solutions = [
+        # Display the table
+        if filtered_solutions := [
             sol for sol in pareto_front 
-            if sol.get('pareto_score', 0) >= min_score
-            and (not show_ilthermo or sol.get('in_ilthermo', False))
-        ]
-        
-        # Display solutions in a table
-        if filtered_solutions:
+            if sol.get('in_ilthermo', False)
+        ]:
             solution_data = []
             for sol in filtered_solutions[:10]:
                 solution_data.append({
