@@ -22,6 +22,7 @@ from models.longList_frag import fragments as long_fragments
 from utils.utils import generate_il_name, is_in_il_thermo
 from utils.validation_rules import MolecularValidator
 import random
+import io
 
 # Initialize session state
 if 'property_ranges' not in st.session_state:
@@ -881,13 +882,14 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         st.subheader("Lead Ionic Liquids")
         
         # Add ILThermo validation filter
-        st.checkbox("Show only ILThermo validated", key="show_validated")
+        show_validated = st.checkbox("Show only ILThermo validated", key="show_validated")
         
-        # Display the table
+        # Display the table of top solutions
         if filtered_solutions := [
             sol for sol in pareto_front 
-            if sol.get('in_ilthermo', False)
+            if (not show_validated or sol.get('in_ilthermo', False))
         ]:
+            # Prepare data for display
             solution_data = []
             for sol in filtered_solutions[:10]:
                 solution_data.append({
@@ -897,16 +899,74 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                     'Toxicity (IC50 in mM)': f"{sol['toxicity']:.1f}",
                     'Solubility (g/L)': f"{sol['solubility']:.1f}",
                     'Pareto Score': f"{sol.get('pareto_score', 0):.3f}",
-                    'In ILThermo': '✓' if sol.get('in_ilthermo', False) else '✗'
+                    'In ILThermo': 'Yes' if sol.get('in_ilthermo', False) else 'No'
                 })
             
+            # Display the table
             st.dataframe(
-                solution_data,
+                pd.DataFrame(solution_data),
                 use_container_width=True,
                 hide_index=True
             )
         else:
             st.warning("No solutions match the current filters.")
+            
+        # Add export section
+        st.divider()
+        st.subheader("Export All Ionic Liquids")
+        
+        # Create the export data
+        def create_excel_download():
+            # Prepare data
+            all_data = []
+            for combo in combinations:
+                all_data.append({
+                    'Name': combo['name'],
+                    'Heat Capacity (J/mol·K)': combo['heat_capacity'],
+                    'Density (kg/m³)': combo['density'],
+                    'Toxicity (IC50 in mM)': combo['toxicity'],
+                    'Solubility (g/L)': combo['solubility'],
+                    'Pareto Score': combo.get('pareto_score', 0),
+                    'In ILThermo': 'Yes' if combo.get('in_ilthermo', False) else 'No'
+                })
+            
+            # Create DataFrame
+            df = pd.DataFrame(all_data)
+            
+            # Create Excel file in memory
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, sheet_name='All Ionic Liquids', index=False)
+                
+                # Get the worksheet
+                worksheet = writer.sheets['All Ionic Liquids']
+                
+                # Auto-adjust columns
+                for idx, col in enumerate(df.columns):
+                    series = df[col]
+                    max_len = max(
+                        series.astype(str).apply(len).max(),
+                        len(str(col))
+                    ) + 1
+                    worksheet.set_column(idx, idx, max_len)
+            
+            return output.getvalue()
+        
+        # Create download button
+        if len(combinations) > 0:
+            try:
+                excel_data = create_excel_download()
+                st.download_button(
+                    label=f"Download All Ionic Liquids ({len(combinations)} compounds)",
+                    data=excel_data,
+                    file_name="all_ionic_liquids.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+                st.caption(f"File contains {len(combinations)} ionic liquids with their properties.")
+            except Exception as e:
+                st.error(f"Error creating Excel file: {str(e)}")
+        else:
+            st.warning("No ionic liquids available for export.")
 
     with tab5:
         st.subheader("Optimization Statistics")
