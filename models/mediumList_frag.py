@@ -19,11 +19,8 @@ fragments = [
     {'name': 'Dicyanamide', 'smiles': '[N-](C#N)C#N', 'fragment_type': 'anion'},
     {'name': 'Trifluoromethanesulfonate', 'smiles': 'FC(F)(F)S(=O)(=O)[O-]', 'fragment_type': 'anion'},
     {'name': 'Methanesulfonate', 'smiles': 'CS(=O)(=O)[O-]', 'fragment_type': 'anion'},
-    {'name': 'Tosylate', 'smiles': 'Cc1ccc(cc1)S(=O)(=O)[O-]', 'fragment_type': 'anion'},
     {'name': 'Trifluoroacetate', 'smiles': 'FC(F)(F)C(=O)[O-]', 'fragment_type': 'anion'},
-    {'name': 'Phosphate', 'smiles': '[O-]P(=O)([O-])[O-]', 'fragment_type': 'anion'},
-    {'name': 'Bis(trifluoromethanesulfonyl)imide', 'smiles': 'FC(F)(F)S(=O)(=O)[N-]S(=O)(=O)C(F)(F)F', 'fragment_type': 'anion'},
-
+ 
     # Alkyl Chains
     {'name': 'Methyl', 'smiles': 'C', 'fragment_type': 'alkyl_chain'},
     {'name': 'Ethyl', 'smiles': 'CC', 'fragment_type': 'alkyl_chain'},
