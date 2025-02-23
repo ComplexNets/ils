@@ -43,5 +43,9 @@ fragments = [
     {'name': 'Pentyl', 'smiles': 'CCCCC', 'fragment_type': 'alkyl_chain'},
     {'name': 'Hexyl', 'smiles': 'CCCCCC', 'fragment_type': 'alkyl_chain'},
     {'name': 'Heptyl', 'smiles': 'CCCCCCC', 'fragment_type': 'alkyl_chain'},
-    {'name': 'Octyl', 'smiles': 'CCCCCCCC', 'fragment_type': 'alkyl_chain'}
+    {'name': 'Octyl', 'smiles': 'CCCCCCCC', 'fragment_type': 'alkyl_chain'},
+
+         # Functional Groups
+    {'name': 'Hydroxyl', 'smiles': 'O', 'fragment_type': 'functional_group'},# -OH
+    {'name': 'Amino', 'smiles': 'N', 'fragment_type': 'functional_group'}, # -NH2
 ]
