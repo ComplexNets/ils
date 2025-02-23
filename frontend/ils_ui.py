@@ -657,9 +657,9 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         st.stop()
     
     # Create tabs for different visualizations and analysis
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "Parallel Coordinates", "Property Correlation", 
-        "Property Distributions", "Lead Ionic Liquids", "Statistics"
+        "Property Distributions", "Lead Ionic Liquids", "Statistics", "Fragment Lists"
     ])
 
     with tab1:
@@ -1052,3 +1052,38 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                 "text/csv",
                 key='download-csv'
             )
+
+    with tab6:
+        st.subheader("Fragment Lists")
+        
+        # Get the current fragment list
+        current_list = st.session_state.get('fragment_list', [])
+        
+        # Create a DataFrame for better display
+        fragments_data = []
+        if st.session_state.fragment_list == 'short':
+            fragments = short_fragments
+        elif st.session_state.fragment_list == 'medium':
+            fragments = medium_fragments
+        else:
+            fragments = long_fragments
+        
+        for frag in fragments:
+            fragments_data.append({
+                'Name': frag['name'],
+                'SMILES': frag['smiles'],
+                'Type': frag['fragment_type'].replace('_', ' ').title()
+            })
+        
+        if fragments_data:
+            # Convert to DataFrame
+            import pandas as pd
+            df = pd.DataFrame(fragments_data)
+            
+            # Group by fragment type
+            for frag_type in sorted(df['Type'].unique()):
+                st.write(f"### {frag_type}")
+                type_df = df[df['Type'] == frag_type][['Name', 'SMILES']]
+                st.dataframe(type_df, hide_index=True, use_container_width=True)
+        else:
+            st.warning("No fragments loaded. Please select a fragment list from the sidebar.")
