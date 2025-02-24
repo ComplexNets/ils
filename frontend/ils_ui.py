@@ -9,6 +9,8 @@ from core.heat_capacity import calculate_ionic_liquid_heat_capacity
 from core.density import calculate_density, validate_density
 from core.toxicity import calculate_ionic_liquid_toxicity
 from core.solubility import calculate_solubility, validate_solubility
+from core.hydrophobicity import calculate_ionic_liquid_hydrophobicity, validate_hydrophobicity
+from core.viscosity import calculate_viscosity, validate_viscosity
 from core.pareto_optimizer import ParetoOptimizer
 from frontend.property_input import PropertyRanges, PropertyCriteria
 import pandas as pd
@@ -420,6 +422,76 @@ def get_user_ranges():
         key="solubility_optimize"
     )
 
+    # Hydrophobicity range (logP)
+    st.sidebar.subheader("Hydrophobicity (logP)")
+    hydrophobicity_col1, hydrophobicity_col2, hydrophobicity_col3 = st.sidebar.columns(3)
+    with hydrophobicity_col1:
+        hydrophobicity_min = st.number_input(
+            "Minimum",
+            value=float(prop_ranges.properties.get('hydrophobicity', PropertyCriteria(range=(-5.0, 10.0), importance=3, unit="logP")).range[0]),
+            step=0.1,
+            format="%.1f",
+            key="hydrophobicity_min"
+        )
+    with hydrophobicity_col2:
+        hydrophobicity_max = st.number_input(
+            "Maximum",
+            value=float(prop_ranges.properties.get('hydrophobicity', PropertyCriteria(range=(-5.0, 10.0), importance=3, unit="logP")).range[1]),
+            step=0.1,
+            format="%.1f",
+            key="hydrophobicity_max"
+        )
+    with hydrophobicity_col3:
+        hydrophobicity_importance = st.slider(
+            "Importance",
+            min_value=1,
+            max_value=5,
+            value=prop_ranges.properties.get('hydrophobicity', PropertyCriteria(range=(-5.0, 10.0), importance=3, unit="logP")).importance,
+            key="hydrophobicity_importance"
+        )
+    hydrophobicity_optimize_higher = st.sidebar.radio(
+        "Hydrophobicity Optimization",
+        ["Higher is better", "Lower is better"],
+        index=0 if prop_ranges.properties.get('hydrophobicity').optimize_higher else 1,
+        horizontal=True,
+        key="hydrophobicity_optimize"
+    )
+
+    # Viscosity range (cP)
+    st.sidebar.subheader("Viscosity (cP)")
+    viscosity_col1, viscosity_col2, viscosity_col3 = st.sidebar.columns(3)
+    with viscosity_col1:
+        viscosity_min = st.number_input(
+            "Minimum",
+            value=float(prop_ranges.properties.get('viscosity', PropertyCriteria(range=(1.0, 10000.0), importance=3, unit="cP")).range[0]),
+            step=1.0,
+            format="%.1f",
+            key="viscosity_min"
+        )
+    with viscosity_col2:
+        viscosity_max = st.number_input(
+            "Maximum",
+            value=float(prop_ranges.properties.get('viscosity', PropertyCriteria(range=(1.0, 10000.0), importance=3, unit="cP")).range[1]),
+            step=100.0,
+            format="%.1f",
+            key="viscosity_max"
+        )
+    with viscosity_col3:
+        viscosity_importance = st.slider(
+            "Importance",
+            min_value=1,
+            max_value=5,
+            value=prop_ranges.properties.get('viscosity', PropertyCriteria(range=(1.0, 10000.0), importance=3, unit="cP")).importance,
+            key="viscosity_importance"
+        )
+    viscosity_optimize_higher = st.sidebar.radio(
+        "Viscosity Optimization",
+        ["Higher is better", "Lower is better"],
+        index=0 if prop_ranges.properties.get('viscosity').optimize_higher else 1,
+        horizontal=True,
+        key="viscosity_optimize"
+    )
+
     # Update property ranges and optimizer constraints
     prop_ranges.update_property(
         'density',
@@ -475,6 +547,34 @@ def get_user_ranges():
         solubility_max, 
         solubility_importance/5.0,
         optimize_higher=solubility_optimize_higher == "Higher is better"
+    )
+    
+    prop_ranges.update_property(
+        'hydrophobicity',
+        (hydrophobicity_min, hydrophobicity_max),
+        weight=hydrophobicity_importance/5.0,
+        optimize_higher=hydrophobicity_optimize_higher == "Higher is better"
+    )
+    optimizer.set_constraint(
+        'hydrophobicity', 
+        hydrophobicity_min, 
+        hydrophobicity_max, 
+        hydrophobicity_importance/5.0,
+        optimize_higher=hydrophobicity_optimize_higher == "Higher is better"
+    )
+    
+    prop_ranges.update_property(
+        'viscosity',
+        (viscosity_min, viscosity_max),
+        weight=viscosity_importance/5.0,
+        optimize_higher=viscosity_optimize_higher == "Higher is better"
+    )
+    optimizer.set_constraint(
+        'viscosity', 
+        viscosity_min, 
+        viscosity_max, 
+        viscosity_importance/5.0,
+        optimize_higher=viscosity_optimize_higher == "Higher is better"
     )
     
     return prop_ranges
@@ -561,6 +661,19 @@ def calculate_properties():
                         print("Skipping combination due to None solubility")
                         continue
                     
+                    hydrophobicity = calculate_ionic_liquid_hydrophobicity(combo)
+                    if hydrophobicity is None:
+                        continue
+                    
+                    # Extract individual components for viscosity calculation
+                    viscosity = calculate_viscosity(
+                        cation=combo['cation'],
+                        anion=combo['anion'],
+                        alkyl_chain=combo['alkyl_chain']
+                    )
+                    if viscosity is None:
+                        continue
+                    
                     # Check if properties are within user-defined ranges
                     solubility_range = st.session_state.property_ranges.properties['solubility'].range
                     print(f"Checking solubility {solubility} against range {solubility_range}")
@@ -581,19 +694,28 @@ def calculate_properties():
                         print(f"Skipping due to solubility range: {solubility} not in {st.session_state.property_ranges.properties['solubility'].range}")
                         continue
                     
+                    if not (st.session_state.property_ranges.properties['hydrophobicity'].range[0] <= hydrophobicity <= st.session_state.property_ranges.properties['hydrophobicity'].range[1]):
+                        print(f"Skipping due to hydrophobicity range: {hydrophobicity} not in {st.session_state.property_ranges.properties['hydrophobicity'].range}")
+                        continue
+                    
+                    if not (st.session_state.property_ranges.properties['viscosity'].range[0] <= viscosity <= st.session_state.property_ranges.properties['viscosity'].range[1]):
+                        print(f"Skipping due to viscosity range: {viscosity} not in {st.session_state.property_ranges.properties['viscosity'].range}")
+                        continue
+                    
                     # Add to combinations list if all properties were calculated and within ranges
-                    combinations.append({
+                    combo_dict = {
                         'name': combo['name'],
-                        'cation': combo['cation']['name'],
-                        'anion': combo['anion']['name'],
-                        'alkyl_chain': combo['alkyl_chain']['name'],
-                        'molecular_weight': combo['molecular_weight'],
+                        'cation': combo['cation'],
+                        'anion': combo['anion'],
+                        'alkyl_chain': combo['alkyl_chain'],
                         'heat_capacity': heat_capacity,
                         'density': density,
                         'toxicity': toxicity,
                         'solubility': solubility,
-                        'in_ilthermo': combo.get('in_ilthermo', False)
-                    })
+                        'hydrophobicity': hydrophobicity,
+                        'viscosity': viscosity
+                    }
+                    combinations.append(combo_dict)
                 except Exception as e:
                     print(f"Error calculating properties for {combo['name']}: {str(e)}")
                     continue
@@ -665,12 +787,22 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
     with tab1:
         # Helper function for normalization
         def get_normalized_range(values):
-            min_val = min(values) if values else 0
-            max_val = max(values) if values else 1
-            # If all values are the same, add a small range
-            if min_val == max_val:
-                min_val = min_val - 0.5
-                max_val = max_val + 0.5
+            if not values:
+                return 0, 1
+            min_val = min(values)
+            max_val = max(values)
+            # If all values are the same or very close
+            if abs(max_val - min_val) < 1e-10:
+                # Use property range as fallback
+                prop_name = next((name for name, prop in st.session_state.property_ranges.properties.items() 
+                                if any(abs(v - values[0]) < 1e-10 for v in [prop.range[0], prop.range[1]]))
+                              , None)
+                if prop_name:
+                    min_val, max_val = st.session_state.property_ranges.properties[prop_name].range
+                else:
+                    # If we can't find the property, add a small range around the value
+                    min_val = values[0] * 0.9 if values[0] != 0 else -0.1
+                    max_val = values[0] * 1.1 if values[0] != 0 else 0.1
             return min_val, max_val
 
         # Parallel coordinates plot
@@ -698,6 +830,16 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                     log_max = math.log10(100)  # 100 mM maximum
                     dims.append(dict(range=[log_min, log_max],
                                label=f"{prop_name} (IC50, mM)",
+                               values=log_values,
+                               ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
+                               tickvals=list(range(int(log_min), int(log_max)+1))))
+                elif prop_name == 'hydrophobicity':
+                    # For hydrophobicity (logP), use log scale since values can span orders of magnitude
+                    log_values = [math.log10(max(v, 0.1)) for v in values]  # Use 0.1 as minimum to avoid log(0)
+                    log_min = math.log10(0.1)  # 0.1 minimum
+                    log_max = math.log10(10)  # 10 maximum
+                    dims.append(dict(range=[log_min, log_max],
+                               label=f"{prop_name} (logP)",
                                values=log_values,
                                ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
                                tickvals=list(range(int(log_min), int(log_max)+1))))
@@ -732,6 +874,16 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                                values=log_values,
                                ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
                                tickvals=list(range(int(log_min), int(log_max)+1))))
+                elif prop_name == 'hydrophobicity':
+                    # For hydrophobicity (logP), use log scale normalization
+                    log_values = [math.log10(max(v, 0.1)) for v in values]
+                    log_min = math.log10(0.1)
+                    log_max = math.log10(10)
+                    dims.append(dict(range=[log_min, log_max],
+                               label=f"{prop_name} (logP)",
+                               values=log_values,
+                               ticktext=[f"{10**x:.1f}" for x in range(int(log_min), int(log_max)+1)],
+                               tickvals=list(range(int(log_min), int(log_max)+1))))
                 else:
                     # Scale other properties normally
                     scaled_values = [(v - min_val) / (max_val - min_val) for v in values]
@@ -758,7 +910,7 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         st.subheader("Property Correlation Analysis")
         # Create correlation matrix
         props = list(combinations[0].keys())
-        props = [p for p in props if p in ['heat_capacity', 'density', 'toxicity', 'solubility']]
+        props = [p for p in props if p in ['heat_capacity', 'density', 'toxicity', 'solubility', 'hydrophobicity', 'viscosity']]
         
         corr_data = []
         for p1 in props:
@@ -863,6 +1015,28 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
             )
         )
         
+        # Hydrophobicity Distribution
+        fig.add_trace(
+            go.Histogram(
+                x=[sol['hydrophobicity'] for sol in combinations],
+                name="Hydrophobicity",
+                nbinsx=30,
+                marker_color='orange',
+                opacity=0.6
+            )
+        )
+        
+        # Viscosity Distribution
+        fig.add_trace(
+            go.Histogram(
+                x=[sol['viscosity'] for sol in combinations],
+                name="Viscosity",
+                nbinsx=30,
+                marker_color='purple',
+                opacity=0.6
+            )
+        )
+        
         fig.update_layout(
             title="Property Distributions",
             xaxis_title="Value",
@@ -898,6 +1072,8 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                     'Density (kg/m³)': f"{sol['density']:.1f}",
                     'Toxicity (IC50 in mM)': f"{sol['toxicity']:.1f}",
                     'Solubility (g/L)': f"{sol['solubility']:.1f}",
+                    'Hydrophobicity (logP)': f"{sol['hydrophobicity']:.1f}",
+                    'Viscosity (cP)': f"{sol['viscosity']:.1f}",
                     'Pareto Score': f"{sol.get('pareto_score', 0):.3f}",
                     'In ILThermo': 'Yes' if sol.get('in_ilthermo', False) else 'No'
                 })
@@ -926,6 +1102,8 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                     'Density (kg/m³)': combo['density'],
                     'Toxicity (IC50 in mM)': combo['toxicity'],
                     'Solubility (g/L)': combo['solubility'],
+                    'Hydrophobicity (logP)': combo['hydrophobicity'],
+                    'Viscosity (cP)': combo['viscosity'],
                     'Pareto Score': combo.get('pareto_score', 0),
                     'In ILThermo': 'Yes' if combo.get('in_ilthermo', False) else 'No'
                 })
@@ -976,19 +1154,20 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         
         with col1:
             st.metric(
-                "Total Feasible ILs",
-                f"{st.session_state.total_feasible}",
-                help="Total number of chemically feasible ionic liquids"
-            )
-            st.metric(
-                "Valid ILs (In Range)",
+                "Total Combinations Generated",
                 f"{len(combinations)}",
-                help="Number of ionic liquids within specified property ranges"
+                help="Total number of valid ionic liquid combinations found"
             )
+            
+            # Calculate percentage of combinations in ILThermo database
+            total_in_ilthermo = sum(1 for c in combinations if c.get('in_ilthermo', False))
+            percent_in_ilthermo = (total_in_ilthermo / len(combinations) * 100) if combinations else 0
+            
             st.metric(
-                "ILThermo Validated",
-                f"{sum(1 for c in combinations if c['in_ilthermo'])}",
-                help="Number of ionic liquids found in ILThermo database"
+                "Combinations in ILThermo",
+                f"{total_in_ilthermo}",
+                f"{percent_in_ilthermo:.1f}% of total",
+                help="Number of combinations that exist in the ILThermo database"
             )
         
         with col2:
@@ -997,6 +1176,8 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
             cp_values = [s['heat_capacity'] for s in combinations if 'heat_capacity' in s]
             toxicity_values = [s['toxicity'] for s in combinations if 'toxicity' in s]
             solubility_values = [s['solubility'] for s in combinations if 'solubility' in s]
+            hydrophobicity_values = [s['hydrophobicity'] for s in combinations if 'hydrophobicity' in s]
+            viscosity_values = [s['viscosity'] for s in combinations if 'viscosity' in s]
             
             if density_values:
                 st.metric("Density Range", 
@@ -1010,6 +1191,12 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
             if solubility_values:
                 st.metric("Solubility Range", 
                          f"{min(solubility_values):.1f} - {max(solubility_values):.1f} g/L")
+            if hydrophobicity_values:
+                st.metric("Hydrophobicity Range", 
+                         f"{min(hydrophobicity_values):.1f} - {max(hydrophobicity_values):.1f} logP")
+            if viscosity_values:
+                st.metric("Viscosity Range", 
+                         f"{min(viscosity_values):.1f} - {max(viscosity_values):.1f} cP")
                          
         with col3:
             # Show average scores
@@ -1018,11 +1205,15 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                 avg_cp = sum(s.get('heat_capacity', 0) for s in combinations) / len(combinations)
                 avg_toxicity = sum(s.get('toxicity', 0) for s in combinations) / len(combinations)
                 avg_solubility = sum(s.get('solubility', 0) for s in combinations) / len(combinations)
+                avg_hydrophobicity = sum(s.get('hydrophobicity', 0) for s in combinations) / len(combinations)
+                avg_viscosity = sum(s.get('viscosity', 0) for s in combinations) / len(combinations)
                 
                 st.metric("Average Density", f"{avg_density:.1f} kg/m³")
                 st.metric("Average Heat Capacity", f"{avg_cp:.1f} J/mol·K")
                 st.metric("Average Toxicity", f"{avg_toxicity:.1f} mM")
                 st.metric("Average Solubility", f"{avg_solubility:.1f} g/L")
+                st.metric("Average Hydrophobicity", f"{avg_hydrophobicity:.1f} logP")
+                st.metric("Average Viscosity", f"{avg_viscosity:.1f} cP")
         
         # Summary statistics in sidebar
         st.sidebar.subheader("Quick Summary")
@@ -1040,6 +1231,8 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                     'Density': sol['density'],
                     'Toxicity': sol['toxicity'],
                     'Solubility': sol['solubility'],
+                    'Hydrophobicity': sol['hydrophobicity'],
+                    'Viscosity': sol['viscosity'],
                     'Pareto_Score': sol.get('pareto_score', 0),
                     'In_ILThermo': sol.get('in_ilthermo', False)
                 })

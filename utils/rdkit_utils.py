@@ -36,6 +36,7 @@ def get_rdkit_properties(smiles: str) -> Optional[Dict]:
             'charge': int(Chem.GetFormalCharge(mol)),
             'aromatic_ring_count': int(Descriptors.NumAromaticRings(mol)),
             'topological_polar_surface_area': float(Descriptors.TPSA(mol)),
+            'MolLogP': float(Descriptors.MolLogP(mol)),  
             'smiles': Chem.MolToSmiles(mol)  # Canonical SMILES
         }
         

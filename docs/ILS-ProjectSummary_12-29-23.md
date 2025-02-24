@@ -1,6 +1,10 @@
 # Ionic Liquid Screening (ILS) Project Summary
 Last Updated: December 29, 2023
 
+MINICONDA ENVIRONMENT: C:\Users\X1\miniconda3\envs\ils
+
+Requirements.txt file has been updated.
+
 ## Overall Project Progress
 
 ### Core Features Implemented

@@ -3,6 +3,8 @@ import os
 from contextlib import contextmanager
 from combine_fragDensity import main as density_main
 from combine_fragHeatCapacity import main as heat_capacity_main
+from core.hydrophobicity import calculate_ionic_liquid_hydrophobicity
+from core.viscosity import calculate_viscosity
 from dataclasses import dataclass
 from typing import Tuple, Dict, List
 import numpy as np
@@ -29,6 +31,16 @@ class MultiCriteriaOptimizer:
                 range=(800, 1500),
                 importance=3,
                 unit="kg/m³"
+            ),
+            'hydrophobicity': PropertyCriteria(
+                range=(-5.0, 10.0),
+                importance=3,
+                unit="logP"
+            ),
+            'viscosity': PropertyCriteria(
+                range=(1.0, 10000.0),
+                importance=3,
+                unit="cP"
             )
         }
         
@@ -46,19 +58,54 @@ class MultiCriteriaOptimizer:
         self.properties[property_name].range = range_vals
         self.properties[property_name].importance = importance
     
-    def calculate_score(self, heat_capacity: float, density: float) -> float:
+    def calculate_score(self, heat_capacity: float, density: float, hydrophobicity: float = None, viscosity: float = None) -> float:
         """Calculate score for a combination of properties"""
         solution = {
             'heat_capacity': heat_capacity,
-            'density': density
+            'density': density,
+            'hydrophobicity': hydrophobicity,
+            'viscosity': viscosity
         }
-        # Use Pareto ranking for single solution
-        ranked = self.pareto_optimizer.rank_solutions([solution])
-        return ranked[0]['pareto_score'] if ranked else 0.0
+        return self.pareto_optimizer.evaluate_solution(solution)
+
+    def combine_fragments_and_calculate_properties(self):
+        """Combine fragments and calculate properties with Pareto optimization"""
+        fragments = get_filtered_fragments()
+        combinations = []
+        for cation in fragments['cations']:
+            for anion in fragments['anions']:
+                for alkyl_chain in fragments['alkyl_chains']:
+                    combination = {
+                        'cation': cation,
+                        'anion': anion,
+                        'alkyl_chain': alkyl_chain
+                    }
+                    
+                    # Calculate properties
+                    heat_capacity = heat_capacity_main(combination)
+                    density = density_main(combination)
+                    hydrophobicity = calculate_ionic_liquid_hydrophobicity(combination)
+                    viscosity = calculate_viscosity(cation, anion, alkyl_chain)
+                    
+                    if all(x is not None for x in [heat_capacity, density, hydrophobicity, viscosity]):
+                        score = self.calculate_score(heat_capacity, density, hydrophobicity, viscosity)
+                        if score > 0:
+                            combinations.append({
+                                'combination': combination,
+                                'properties': {
+                                    'heat_capacity': heat_capacity,
+                                    'density': density,
+                                    'hydrophobicity': hydrophobicity,
+                                    'viscosity': viscosity
+                                },
+                                'score': score
+                            })
+        
+        return sorted(combinations, key=lambda x: x['score'], reverse=True)
 
 def combine_fragments_and_calculate_properties():
     """Combine fragments and calculate properties with Pareto optimization"""
-    optimizer = ParetoOptimizer()
+    optimizer = MultiCriteriaOptimizer()
     
     # Get initial fragments with properties
     fragments_data = get_filtered_fragments()
@@ -71,7 +118,7 @@ def combine_fragments_and_calculate_properties():
     
     screened_fragments = {}
     for frag_type, frags in fragments_data.items():
-        screened = optimizer.screen_fragments(frags, property_ranges)
+        screened = optimizer.pareto_optimizer.screen_fragments(frags, property_ranges)
         screened_fragments[frag_type] = screened
         
     # Generate valid combinations
@@ -105,7 +152,7 @@ def combine_fragments_and_calculate_properties():
                     valid_combinations.append(combination)
     
     # Get Pareto-optimal solutions and rankings
-    pareto_front, ranked_solutions = optimizer.optimize_combinations(valid_combinations)
+    pareto_front, ranked_solutions = optimizer.pareto_optimizer.optimize_combinations(valid_combinations)
     
     return ranked_solutions  # Return ranked solutions for compatibility
 
