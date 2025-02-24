@@ -7,7 +7,7 @@ from core.pareto_optimizer import ParetoOptimizer
 @dataclass
 class PropertyCriteria:
     range: Tuple[float, float]
-    importance: int  # 1-5 scale
+    importance: float  # 0-1 scale
     unit: str
     optimize_higher: bool = True  # True if higher values are better, False if lower values are better
 
@@ -27,37 +27,37 @@ class PropertyRanges:
         self.properties = {
             'heat_capacity': PropertyCriteria(
                 range=(100.0, 1200.0),  # Expanded range
-                importance=3,
+                importance=0.5,
                 unit="J/mol·K",
                 optimize_higher=True  # Higher heat capacity is generally better
             ),
             'density': PropertyCriteria(
                 range=(200.0, 2500.0),  # Expanded range for lower and higher density ILs
-                importance=3,
+                importance=0.5,
                 unit="kg/m³",
                 optimize_higher=False  # Lower density might be preferred for some applications
             ),
             'toxicity': PropertyCriteria(
                 range=(0.01, 200.0),  # Expanded for both highly toxic and less toxic ILs
-                importance=3,
+                importance=0.5,
                 unit="mM",
                 optimize_higher=True  # Higher IC50 means less toxic
             ),
             'solubility': PropertyCriteria(
                 range=(0.001, 5000.0),  # Expanded for near-zero and highly soluble ILs
-                importance=3,
+                importance=0.5,
                 unit="g/L",
                 optimize_higher=True  # Higher solubility is generally better
             ),
             'hydrophobicity': PropertyCriteria(
                 range=(-10.0, 15.0),  # Expanded for extremely hydrophilic and super hydrophobic ILs
-                importance=3,
+                importance=0.5,
                 unit="logP",
                 optimize_higher=True
             ),
             'viscosity': PropertyCriteria(
                 range=(0.1, 50000.0),  # Expanded for low viscosity and extremely viscous ILs
-                importance=3,
+                importance=0.5,
                 unit="cP",
                 optimize_higher=False
             )
@@ -76,7 +76,7 @@ class PropertyRanges:
         if property_name not in self.properties:
             self.properties[property_name] = PropertyCriteria(
                 range=range_values,
-                importance=int(weight * 5) if weight is not None else 3,
+                importance=weight,
                 unit="",
                 optimize_higher=optimize_higher
             )
@@ -85,72 +85,72 @@ class PropertyRanges:
             prop.range = range_values
             prop.optimize_higher = optimize_higher
             if weight is not None:
-                prop.importance = int(weight * 5)
+                prop.importance = weight
 
     def get_user_input(self):
         """Get property ranges and importance weights from user input"""
         try:
-            print("\nEnter desired property ranges and importance (1-5 scale):")
+            print("\nEnter desired property ranges and importance (0-1 scale):")
             
             # Heat Capacity Input
             print("\nHeat Capacity:")
             min_capacity = float(input(f"Minimum heat capacity ({self.properties['heat_capacity'].unit}): "))
             max_capacity = float(input(f"Maximum heat capacity ({self.properties['heat_capacity'].unit}): "))
-            hc_importance = int(input("Importance (1-5, where 5 is most important): "))
+            hc_importance = float(input("Importance (0-1, where 1 is most important): "))
             
             # Validate importance
-            if not 1 <= hc_importance <= 5:
-                raise ValueError("Importance must be between 1 and 5")
+            if not 0 <= hc_importance <= 1:
+                raise ValueError("Importance must be between 0 and 1")
             
             # Density Input
             print("\nDensity:")
             min_density = float(input(f"Minimum density ({self.properties['density'].unit}): "))
             max_density = float(input(f"Maximum density ({self.properties['density'].unit}): "))
-            density_importance = int(input("Importance (1-5, where 5 is most important): "))
+            density_importance = float(input("Importance (0-1, where 1 is most important): "))
             
             # Validate importance
-            if not 1 <= density_importance <= 5:
-                raise ValueError("Importance must be between 1 and 5")
+            if not 0 <= density_importance <= 1:
+                raise ValueError("Importance must be between 0 and 1")
                 
             # Toxicity Input
             print("\nToxicity (IC50):")
             min_toxicity = float(input(f"Minimum IC50 ({self.properties['toxicity'].unit}): "))
             max_toxicity = float(input(f"Maximum IC50 ({self.properties['toxicity'].unit}): "))
-            toxicity_importance = int(input("Importance (1-5, where 5 is most important): "))
+            toxicity_importance = float(input("Importance (0-1, where 1 is most important): "))
             
             # Validate importance
-            if not 1 <= toxicity_importance <= 5:
-                raise ValueError("Importance must be between 1 and 5")
+            if not 0 <= toxicity_importance <= 1:
+                raise ValueError("Importance must be between 0 and 1")
             
             # Solubility Input
             print("\nSolubility:")
             min_solubility = float(input(f"Minimum solubility ({self.properties['solubility'].unit}): "))
             max_solubility = float(input(f"Maximum solubility ({self.properties['solubility'].unit}): "))
-            solubility_importance = int(input("Importance (1-5, where 5 is most important): "))
+            solubility_importance = float(input("Importance (0-1, where 1 is most important): "))
             
             # Validate importance
-            if not 1 <= solubility_importance <= 5:
-                raise ValueError("Importance must be between 1 and 5")
+            if not 0 <= solubility_importance <= 1:
+                raise ValueError("Importance must be between 0 and 1")
             
             # Hydrophobicity Input
             print("\nHydrophobicity:")
             min_hydrophobicity = float(input(f"Minimum hydrophobicity ({self.properties['hydrophobicity'].unit}): "))
             max_hydrophobicity = float(input(f"Maximum hydrophobicity ({self.properties['hydrophobicity'].unit}): "))
-            hydrophobicity_importance = int(input("Importance (1-5, where 5 is most important): "))
+            hydrophobicity_importance = float(input("Importance (0-1, where 1 is most important): "))
             
             # Validate importance
-            if not 1 <= hydrophobicity_importance <= 5:
-                raise ValueError("Importance must be between 1 and 5")
+            if not 0 <= hydrophobicity_importance <= 1:
+                raise ValueError("Importance must be between 0 and 1")
             
             # Viscosity Input
             print("\nViscosity:")
             min_viscosity = float(input(f"Minimum viscosity ({self.properties['viscosity'].unit}): "))
             max_viscosity = float(input(f"Maximum viscosity ({self.properties['viscosity'].unit}): "))
-            viscosity_importance = int(input("Importance (1-5, where 5 is most important): "))
+            viscosity_importance = float(input("Importance (0-1, where 1 is most important): "))
             
             # Validate importance
-            if not 1 <= viscosity_importance <= 5:
-                raise ValueError("Importance must be between 1 and 5")
+            if not 0 <= viscosity_importance <= 1:
+                raise ValueError("Importance must be between 0 and 1")
             
             # Update the properties
             self.properties['heat_capacity'].range = (min_capacity, max_capacity)
@@ -298,7 +298,7 @@ def display_property_inputs():
     with hc_col2:
         hc_max = st.number_input("Max", value=1200.0, step=10.0, key="hc_max")
     with hc_col3:
-        hc_importance = st.slider("Importance", 1, 5, 3, key="hc_importance")
+        hc_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="hc_importance")
     
     # Density
     st.subheader("Density (kg/m³)")
@@ -308,7 +308,7 @@ def display_property_inputs():
     with d_col2:
         d_max = st.number_input("Max", value=2500.0, step=50.0, key="d_max")
     with d_col3:
-        d_importance = st.slider("Importance", 1, 5, 3, key="d_importance")
+        d_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="d_importance")
     
     # Toxicity
     st.subheader("Toxicity (IC50, mM)")
@@ -318,7 +318,7 @@ def display_property_inputs():
     with t_col2:
         t_max = st.number_input("Max", value=200.0, step=1.0, key="t_max")
     with t_col3:
-        t_importance = st.slider("Importance", 1, 5, 3, key="t_importance")
+        t_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="t_importance")
     
     # Solubility
     st.subheader("Solubility (g/L)")
@@ -328,7 +328,7 @@ def display_property_inputs():
     with s_col2:
         s_max = st.number_input("Max", value=5000.0, step=1.0, key="s_max")
     with s_col3:
-        s_importance = st.slider("Importance", 1, 5, 3, key="s_importance")
+        s_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="s_importance")
     
     # Hydrophobicity
     st.subheader("Hydrophobicity (logP)")
@@ -338,7 +338,7 @@ def display_property_inputs():
     with h_col2:
         h_max = st.number_input("Max", value=15.0, step=0.1, key="h_max")
     with h_col3:
-        h_importance = st.slider("Importance", 1, 5, 3, key="h_importance")
+        h_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="h_importance")
     
     # Viscosity
     st.subheader("Viscosity (cP)")
@@ -348,15 +348,15 @@ def display_property_inputs():
     with v_col2:
         v_max = st.number_input("Max", value=50000.0, step=100.0, key="v_max")
     with v_col3:
-        v_importance = st.slider("Importance", 1, 5, 3, key="v_importance")
+        v_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="v_importance")
     
     # Update optimizer constraints
-    optimizer.set_constraint("heat_capacity", hc_min, hc_max, hc_importance/5.0)
-    optimizer.set_constraint("density", d_min, d_max, d_importance/5.0)
-    optimizer.set_constraint("toxicity", t_min, t_max, t_importance/5.0)
-    optimizer.set_constraint("solubility", s_min, s_max, s_importance/5.0)
-    optimizer.set_constraint("hydrophobicity", h_min, h_max, h_importance/5.0)
-    optimizer.set_constraint("viscosity", v_min, v_max, v_importance/5.0)
+    optimizer.set_constraint("heat_capacity", hc_min, hc_max, hc_importance)
+    optimizer.set_constraint("density", d_min, d_max, d_importance)
+    optimizer.set_constraint("toxicity", t_min, t_max, t_importance)
+    optimizer.set_constraint("solubility", s_min, s_max, s_importance)
+    optimizer.set_constraint("hydrophobicity", h_min, h_max, h_importance)
+    optimizer.set_constraint("viscosity", v_min, v_max, v_importance)
     
     # Run optimization
     if st.button("Find Optimal Ionic Liquids"):
@@ -429,7 +429,7 @@ def main():
         for name, prop in properties.items():
             print(f"\n{name.replace('_', ' ').title()}:")
             print(f"Range: {prop.range[0]} to {prop.range[1]} {prop.unit}")
-            print(f"Importance: {prop.importance}/5")
+            print(f"Importance: {prop.importance}")
         
         # Example calculation
         print("\nExample objective score calculation:")

@@ -28,9 +28,21 @@ import io
 
 # Initialize session state
 if 'property_ranges' not in st.session_state:
-    st.session_state.property_ranges = PropertyRanges()
+    prop_ranges = PropertyRanges()
+    prop_ranges.update_property('heat_capacity', (100.0, 1200.0), 0.5, True)
+    prop_ranges.update_property('density', (200.0, 2500.0), 0.5, False)
+    prop_ranges.update_property('toxicity', (0.01, 200.0), 0.5, True)
+    prop_ranges.update_property('solubility', (0.001, 5000.0), 0.5, True)
+    prop_ranges.update_property('hydrophobicity', (-10.0, 15.0), 0.5, True)
+    prop_ranges.update_property('viscosity', (0.1, 50000.0), 0.5, False)
+    st.session_state.property_ranges = prop_ranges
+else:
+    prop_ranges = st.session_state.property_ranges
+
 if 'optimizer' not in st.session_state:
-    st.session_state.optimizer = ParetoOptimizer()
+    optimizer = ParetoOptimizer()
+    st.session_state.optimizer = optimizer
+
 if 'fragment_list' not in st.session_state:
     st.session_state.fragment_list = 'short'
 if 'validation_params' not in st.session_state:
@@ -287,68 +299,67 @@ def get_user_ranges():
     density_col1, density_col2, density_col3 = st.sidebar.columns(3)
     with density_col1:
         density_min = st.number_input(
-            "Minimum",
-            value=float(prop_ranges.properties['density'].range[0]),
-            step=50.0,
-            format="%.1f",
+            "Min",
+            value=200.0,
+            step=10.0,
             key="density_min"
         )
     with density_col2:
         density_max = st.number_input(
-            "Maximum",
-            value=float(prop_ranges.properties['density'].range[1]),
-            step=50.0,
-            format="%.1f",
+            "Max",
+            value=2500.0,
+            step=10.0,
             key="density_max"
         )
     with density_col3:
         density_importance = st.slider(
             "Importance",
-            min_value=1,
-            max_value=5,
-            value=prop_ranges.properties['density'].importance,
-            key="density_importance"
-        )
+            min_value=0,
+            max_value=10,
+            value=5,
+            help="0 = ignore this property, 10 = highest importance",
+            key="density_importance_slider"
+        ) / 10.0
+    
     density_optimize_higher = st.sidebar.radio(
         "Density Optimization",
         ["Higher is better", "Lower is better"],
-        index=0 if prop_ranges.properties['density'].optimize_higher else 1,
-        horizontal=True,
+        index=1,
         key="density_optimize"
     )
-
-    # Heat capacity range (J/mol·K)
+    
+    # Heat Capacity
     st.sidebar.subheader("Heat Capacity (J/mol·K)")
     cp_col1, cp_col2, cp_col3 = st.sidebar.columns(3)
+    
     with cp_col1:
         cp_min = st.number_input(
-            "Minimum",
-            value=float(prop_ranges.properties['heat_capacity'].range[0]),
+            "Min",
+            value=100.0,
             step=10.0,
-            format="%.1f",
             key="cp_min"
         )
     with cp_col2:
         cp_max = st.number_input(
-            "Maximum",
-            value=float(prop_ranges.properties['heat_capacity'].range[1]),
+            "Max",
+            value=1200.0,
             step=10.0,
-            format="%.1f",
             key="cp_max"
         )
     with cp_col3:
-        cp_importance = st.slider(
+        heat_capacity_importance = st.slider(
             "Importance",
-            min_value=1,
-            max_value=5,
-            value=prop_ranges.properties['heat_capacity'].importance,
-            key="cp_importance"
-        )
+            min_value=0,
+            max_value=10,
+            value=5,
+            help="0 = ignore this property, 10 = highest importance",
+            key="heat_capacity_importance_slider"
+        ) / 10.0
+        
     cp_optimize_higher = st.sidebar.radio(
         "Heat Capacity Optimization",
         ["Higher is better", "Lower is better"],
-        index=0 if prop_ranges.properties['heat_capacity'].optimize_higher else 1,
-        horizontal=True,
+        index=0,
         key="cp_optimize"
     )
 
@@ -357,16 +368,16 @@ def get_user_ranges():
     toxicity_col1, toxicity_col2, toxicity_col3 = st.sidebar.columns(3)
     with toxicity_col1:
         toxicity_min = st.number_input(
-            "Minimum IC50",
-            value=float(prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[0]),
+            "Min IC50",
+            value=0.01,
             step=0.1,
             format="%.1f",
             key="toxicity_min"
         )
     with toxicity_col2:
         toxicity_max = st.number_input(
-            "Maximum IC50",
-            value=float(prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).range[1]),
+            "Max IC50",
+            value=200.0,
             step=0.1,
             format="%.1f",
             key="toxicity_max"
@@ -374,15 +385,17 @@ def get_user_ranges():
     with toxicity_col3:
         toxicity_importance = st.slider(
             "Importance",
-            min_value=1,
-            max_value=5,
-            value=prop_ranges.properties.get('toxicity', PropertyCriteria(range=(0.1, 100.0), importance=3, unit="mM")).importance,
-            key="toxicity_importance"
-        )
+            min_value=0,
+            max_value=10,
+            value=5,
+            help="0 = ignore this property, 10 = highest importance",
+            key="toxicity_importance_slider"
+        ) / 10.0
+        
     toxicity_optimize_higher = st.sidebar.radio(
         "Toxicity Optimization",
         ["Higher is better (less toxic)", "Lower is better (more toxic)"],
-        index=0 if prop_ranges.properties.get('toxicity').optimize_higher else 1,
+        index=0,
         horizontal=True,
         key="toxicity_optimize"
     )
@@ -392,16 +405,16 @@ def get_user_ranges():
     solubility_col1, solubility_col2, solubility_col3 = st.sidebar.columns(3)
     with solubility_col1:
         solubility_min = st.number_input(
-            "Minimum",
-            value=float(prop_ranges.properties.get('solubility', PropertyCriteria(range=(0.1, 1000.0), importance=3, unit="g/L")).range[0]),
+            "Min",
+            value=0.001,
             step=0.1,
             format="%.1f",
             key="solubility_min"
         )
     with solubility_col2:
         solubility_max = st.number_input(
-            "Maximum",
-            value=float(prop_ranges.properties.get('solubility', PropertyCriteria(range=(0.1, 1000.0), importance=3, unit="g/L")).range[1]),
+            "Max",
+            value=5000.0,
             step=1.0,
             format="%.1f",
             key="solubility_max"
@@ -409,15 +422,17 @@ def get_user_ranges():
     with solubility_col3:
         solubility_importance = st.slider(
             "Importance",
-            min_value=1,
-            max_value=5,
-            value=prop_ranges.properties.get('solubility', PropertyCriteria(range=(0.1, 1000.0), importance=3, unit="g/L")).importance,
-            key="solubility_importance"
-        )
+            min_value=0,
+            max_value=10,
+            value=5,
+            help="0 = ignore this property, 10 = highest importance",
+            key="solubility_importance_slider"
+        ) / 10.0
+        
     solubility_optimize_higher = st.sidebar.radio(
         "Solubility Optimization",
         ["Higher is better", "Lower is better"],
-        index=0 if prop_ranges.properties.get('solubility', PropertyCriteria(range=(0.1, 1000.0), importance=3, unit="g/L")).optimize_higher else 1,
+        index=0,
         horizontal=True,
         key="solubility_optimize"
     )
@@ -427,16 +442,16 @@ def get_user_ranges():
     hydrophobicity_col1, hydrophobicity_col2, hydrophobicity_col3 = st.sidebar.columns(3)
     with hydrophobicity_col1:
         hydrophobicity_min = st.number_input(
-            "Minimum",
-            value=float(prop_ranges.properties.get('hydrophobicity', PropertyCriteria(range=(-5.0, 10.0), importance=3, unit="logP")).range[0]),
+            "Min",
+            value=-10.0,
             step=0.1,
             format="%.1f",
             key="hydrophobicity_min"
         )
     with hydrophobicity_col2:
         hydrophobicity_max = st.number_input(
-            "Maximum",
-            value=float(prop_ranges.properties.get('hydrophobicity', PropertyCriteria(range=(-5.0, 10.0), importance=3, unit="logP")).range[1]),
+            "Max",
+            value=15.0,
             step=0.1,
             format="%.1f",
             key="hydrophobicity_max"
@@ -444,15 +459,17 @@ def get_user_ranges():
     with hydrophobicity_col3:
         hydrophobicity_importance = st.slider(
             "Importance",
-            min_value=1,
-            max_value=5,
-            value=prop_ranges.properties.get('hydrophobicity', PropertyCriteria(range=(-5.0, 10.0), importance=3, unit="logP")).importance,
-            key="hydrophobicity_importance"
-        )
+            min_value=0,
+            max_value=10,
+            value=5,
+            help="0 = ignore this property, 10 = highest importance",
+            key="hydrophobicity_importance_slider"
+        ) / 10.0
+        
     hydrophobicity_optimize_higher = st.sidebar.radio(
         "Hydrophobicity Optimization",
         ["Higher is better", "Lower is better"],
-        index=0 if prop_ranges.properties.get('hydrophobicity').optimize_higher else 1,
+        index=0,
         horizontal=True,
         key="hydrophobicity_optimize"
     )
@@ -462,16 +479,16 @@ def get_user_ranges():
     viscosity_col1, viscosity_col2, viscosity_col3 = st.sidebar.columns(3)
     with viscosity_col1:
         viscosity_min = st.number_input(
-            "Minimum",
-            value=float(prop_ranges.properties.get('viscosity', PropertyCriteria(range=(1.0, 10000.0), importance=3, unit="cP")).range[0]),
+            "Min",
+            value=0.1,
             step=1.0,
             format="%.1f",
             key="viscosity_min"
         )
     with viscosity_col2:
         viscosity_max = st.number_input(
-            "Maximum",
-            value=float(prop_ranges.properties.get('viscosity', PropertyCriteria(range=(1.0, 10000.0), importance=3, unit="cP")).range[1]),
+            "Max",
+            value=50000.0,
             step=100.0,
             format="%.1f",
             key="viscosity_max"
@@ -479,101 +496,103 @@ def get_user_ranges():
     with viscosity_col3:
         viscosity_importance = st.slider(
             "Importance",
-            min_value=1,
-            max_value=5,
-            value=prop_ranges.properties.get('viscosity', PropertyCriteria(range=(1.0, 10000.0), importance=3, unit="cP")).importance,
-            key="viscosity_importance"
-        )
+            min_value=0,
+            max_value=10,
+            value=5,
+            help="0 = ignore this property, 10 = highest importance",
+            key="viscosity_importance_slider"
+        ) / 10.0
+        
     viscosity_optimize_higher = st.sidebar.radio(
         "Viscosity Optimization",
         ["Higher is better", "Lower is better"],
-        index=0 if prop_ranges.properties.get('viscosity').optimize_higher else 1,
+        index=1,
         horizontal=True,
         key="viscosity_optimize"
     )
 
     # Update property ranges and optimizer constraints
     prop_ranges.update_property(
-        'density',
-        (density_min, density_max),
-        weight=density_importance/5.0,
-        optimize_higher=density_optimize_higher == "Higher is better"
-    )
-    optimizer.set_constraint(
-        'density', 
-        density_min, 
-        density_max, 
-        density_importance/5.0,
-        optimize_higher=density_optimize_higher == "Higher is better"
-    )
-    
-    prop_ranges.update_property(
         'heat_capacity',
         (cp_min, cp_max),
-        weight=cp_importance/5.0,
+        weight=heat_capacity_importance,
         optimize_higher=cp_optimize_higher == "Higher is better"
     )
     optimizer.set_constraint(
         'heat_capacity', 
         cp_min, 
         cp_max, 
-        cp_importance/5.0,
+        heat_capacity_importance,
         optimize_higher=cp_optimize_higher == "Higher is better"
+    )
+    
+    prop_ranges.update_property(
+        'density',
+        (density_min, density_max),
+        weight=density_importance,
+        optimize_higher=density_optimize_higher == "Higher is better"
+    )
+    optimizer.set_constraint(
+        'density', 
+        density_min, 
+        density_max, 
+        density_importance,
+        optimize_higher=density_optimize_higher == "Higher is better"
     )
     
     prop_ranges.update_property(
         'toxicity',
         (toxicity_min, toxicity_max),
-        weight=toxicity_importance/5.0,
-        optimize_higher=toxicity_optimize_higher == "Higher is better (less toxic)"
+        weight=toxicity_importance,
+        optimize_higher=toxicity_optimize_higher == "Higher is better"
     )
     optimizer.set_constraint(
         'toxicity', 
         toxicity_min, 
         toxicity_max, 
-        toxicity_importance/5.0,
-        optimize_higher=toxicity_optimize_higher == "Higher is better (less toxic)"
+        toxicity_importance,
+        optimize_higher=toxicity_optimize_higher == "Higher is better"
     )
     
     prop_ranges.update_property(
         'solubility',
         (solubility_min, solubility_max),
-        weight=solubility_importance/5.0,
+        weight=solubility_importance,
         optimize_higher=solubility_optimize_higher == "Higher is better"
     )
     optimizer.set_constraint(
         'solubility', 
         solubility_min, 
         solubility_max, 
-        solubility_importance/5.0,
+        solubility_importance,
         optimize_higher=solubility_optimize_higher == "Higher is better"
     )
     
     prop_ranges.update_property(
         'hydrophobicity',
         (hydrophobicity_min, hydrophobicity_max),
-        weight=hydrophobicity_importance/5.0,
+        weight=hydrophobicity_importance,
         optimize_higher=hydrophobicity_optimize_higher == "Higher is better"
     )
     optimizer.set_constraint(
         'hydrophobicity', 
         hydrophobicity_min, 
         hydrophobicity_max, 
-        hydrophobicity_importance/5.0,
+        hydrophobicity_importance,
         optimize_higher=hydrophobicity_optimize_higher == "Higher is better"
     )
     
     prop_ranges.update_property(
         'viscosity',
         (viscosity_min, viscosity_max),
-        weight=viscosity_importance/5.0,
+        weight=viscosity_importance,
         optimize_higher=viscosity_optimize_higher == "Higher is better"
     )
     optimizer.set_constraint(
         'viscosity', 
         viscosity_min, 
         viscosity_max, 
-        viscosity_importance/5.0,
+        viscosity_importance,
         optimize_higher=viscosity_optimize_higher == "Higher is better"
     )
     
@@ -730,26 +749,62 @@ def calculate_properties():
             
         # Step 3: Get Pareto front
         with st.spinner("Calculating Pareto front..."):
-            pareto_front = st.session_state.optimizer.get_pareto_front(combinations)
+            pareto_front = st.session_state.optimizer.find_pareto_front(combinations)
             
             # Calculate Pareto scores for all combinations
             for combo in combinations:
-                pareto_score = 0.0
-                for prop_name, constraint in st.session_state.optimizer.properties.items():
-                    val = combo.get(prop_name, 0)
-                    norm_val = st.session_state.optimizer._normalize_property(val, constraint)
-                    pareto_score += norm_val * constraint.weight
-                combo['pareto_score'] = pareto_score / len(st.session_state.optimizer.properties)
-            
+                total_score = 0
+                total_weight = 0
+                
+                # Calculate weighted score for each property
+                for prop_name, constraint in st.session_state.optimizer.constraints.items():
+                    if prop_name not in combo:
+                        continue
+                        
+                    value = combo[prop_name]
+                    weight = constraint['weight']
+                    
+                    # Skip if weight is 0 (property is ignored)
+                    if weight == 0:
+                        continue
+                    
+                    # Normalize the value
+                    norm_value = st.session_state.optimizer.normalize_value(
+                        value, 
+                        constraint['min'], 
+                        constraint['max']
+                    )
+                    
+                    # Invert if we want to minimize
+                    if not constraint['optimize_higher']:
+                        norm_value = 1.0 - norm_value
+                    
+                    # Add to weighted sum
+                    total_score += norm_value * weight
+                    total_weight += weight
+                
+                # Calculate final score
+                combo['pareto_score'] = total_score / total_weight if total_weight > 0 else 0.0
+        
             # Add scores to Pareto front solutions
             for solution in pareto_front:
                 matching_combo = next(c for c in combinations if c['name'] == solution['name'])
                 solution['pareto_score'] = matching_combo['pareto_score']
-        
-        # Set final status message
-        calculation_status.write(f"✅ Found {len(combinations)} combinations within specified ranges")
-        
-        return combinations, pareto_front
+            
+            # Store results in session state
+            st.session_state.pareto_front = pareto_front
+            
+            # Print summary
+            print(f"\nOptimization complete!")
+            print(f"Total combinations: {len(combinations)}")
+            print(f"Pareto front size: {len(pareto_front)}")
+            for prop_name, constraint in st.session_state.optimizer.constraints.items():
+                print(f"\n{prop_name}:")
+                print(f"  Range: {constraint['min']} to {constraint['max']}")
+                print(f"  Weight: {constraint['weight']}")
+                print(f"  Optimize higher: {constraint['optimize_higher']}")
+            
+            return combinations, pareto_front
         
     except Exception as e:
         st.error(f"Error calculating properties: {str(e)}")
@@ -757,6 +812,19 @@ def calculate_properties():
 
 # Main UI layout
 st.set_page_config(page_title="Ionic Liquid Optimizer", layout="wide")
+
+# Set sidebar width
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"][aria-expanded="true"]{
+        min-width: 450px;
+        max-width: 450px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Title and description
 st.title("Ionic Liquid Property Optimizer")

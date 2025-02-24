@@ -16,4 +16,5 @@ fragments = [
     # Functional Groups
     {'name': 'Hydroxyl', 'smiles': 'O', 'fragment_type': 'functional_group'},# -OH
     {'name': 'Amino', 'smiles': 'N', 'fragment_type': 'functional_group'}, # -NH2
+    
 ]

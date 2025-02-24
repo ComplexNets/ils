@@ -1,0 +1,28 @@
+
+additional_fragments = [
+    # Additional Cations
+    {'name': 'Piperidinium', 'smiles': '[N+]1CCCCC1', 'fragment_type': 'cation'},
+    {'name': 'Tetrapropylammonium', 'smiles': '[N+](CCC)(CCC)(CCC)CCC', 'fragment_type': 'cation'},
+    {'name': 'Tetrahexylammonium', 'smiles': '[N+](CCCCCC)(CCCCCC)(CCCCCC)CCCCCC', 'fragment_type': 'cation'},
+    {'name': 'Phospholium', 'smiles': '[P+]1CCCCC1', 'fragment_type': 'cation'},
+    
+    # Additional Anions
+    {'name': 'Nitrate', 'smiles': '[N+](=O)([O-])[O-]', 'fragment_type': 'anion'},
+    {'name': 'Sulfonate', 'smiles': 'S(=O)(=O)[O-]', 'fragment_type': 'anion'},
+    {'name': 'Perchlorate', 'smiles': '[Cl+3]([O-])([O-])([O-])[O-]', 'fragment_type': 'anion'},
+    {'name': 'Hexafluorophosphate', 'smiles': 'F[P-](F)(F)(F)(F)F', 'fragment_type': 'anion'},
+
+    # Additional Alkyl Chains
+    {'name': 'Nonyl', 'smiles': 'CCCCCCCCC', 'fragment_type': 'alkyl_chain'},
+    {'name': 'Decyl', 'smiles': 'CCCCCCCCCC', 'fragment_type': 'alkyl_chain'},
+    {'name': 'Dodecyl', 'smiles': 'CCCCCCCCCCCC', 'fragment_type': 'alkyl_chain'},
+    {'name': 'Tetradecyl', 'smiles': 'CCCCCCCCCCCCCC', 'fragment_type': 'alkyl_chain'},
+    
+    # Additional Functional Groups
+    {'name': 'Carboxyl', 'smiles': 'C(=O)O', 'fragment_type': 'functional_group'}, # -COOH
+    {'name': 'Carbonyl', 'smiles': 'C=O', 'fragment_type': 'functional_group'}, # -C=O
+    {'name': 'Thiol', 'smiles': 'S', 'fragment_type': 'functional_group'}, # -SH
+    {'name': 'Ether', 'smiles': 'COC', 'fragment_type': 'functional_group'}, # -O-
+]
+
+

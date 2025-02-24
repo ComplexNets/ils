@@ -20,6 +20,9 @@ fragments = [
     {'name': '1-Butylpyridinium', 'smiles': 'CCCC[n+]1ccccc1', 'fragment_type': 'cation'},
     {'name': '1-Propylpyridinium', 'smiles': 'CCC[n+]1ccccc1', 'fragment_type': 'cation'},
     {'name': '1-Hexylpyridinium', 'smiles': 'CCCCCC[n+]1ccccc1', 'fragment_type': 'cation'},
+    {'name': 'Piperidinium', 'smiles': '[N+]1CCCCC1', 'fragment_type': 'cation'},
+    {'name': 'Phospholium', 'smiles': '[P+]1CCCCC1', 'fragment_type': 'cation'},
+    
 
     # Anions
     {'name': 'Chloride', 'smiles': '[Cl-]', 'fragment_type': 'anion'},
@@ -44,8 +47,12 @@ fragments = [
     {'name': 'Hexyl', 'smiles': 'CCCCCC', 'fragment_type': 'alkyl_chain'},
     {'name': 'Heptyl', 'smiles': 'CCCCCCC', 'fragment_type': 'alkyl_chain'},
     {'name': 'Octyl', 'smiles': 'CCCCCCCC', 'fragment_type': 'alkyl_chain'},
+    {'name': 'Nonyl', 'smiles': 'CCCCCCCCC', 'fragment_type': 'alkyl_chain'},
+    {'name': 'Decyl', 'smiles': 'CCCCCCCCCC', 'fragment_type': 'alkyl_chain'},
 
          # Functional Groups
     {'name': 'Hydroxyl', 'smiles': 'O', 'fragment_type': 'functional_group'},# -OH
     {'name': 'Amino', 'smiles': 'N', 'fragment_type': 'functional_group'}, # -NH2
+    {'name': 'Carboxyl', 'smiles': 'C(=O)O', 'fragment_type': 'functional_group'}, # -COOH
+    {'name': 'Carbonyl', 'smiles': 'C=O', 'fragment_type': 'functional_group'}, # -C=O
 ]
