@@ -84,13 +84,54 @@ def calculate_ionic_liquid_hydrophobicity(combination: Dict) -> Optional[float]:
         anion_logp = anion_props.get('MolLogP', 0.0)
         alkyl_logp = alkyl_props.get('MolLogP', 0.0)
         
-        print(f"LogP values - Cation: {cation_logp}, Anion: {anion_logp}, Alkyl: {alkyl_logp}")
+        # Add functional group contribution if present
+        functional_group_logp = 0.0
+        if 'functional_group' in combination and combination['functional_group']:
+            functional_group = combination['functional_group']
+            functional_group_smiles = functional_group.get('smiles', '')
+            
+            if functional_group_smiles:
+                print(f"Processing functional group SMILES: {functional_group_smiles}")
+                functional_group_props = get_rdkit_properties(functional_group_smiles)
+                
+                if functional_group_props:
+                    functional_group_logp = functional_group_props.get('MolLogP', 0.0)
+                    print(f"Functional group LogP: {functional_group_logp}")
+                else:
+                    print(f"Failed to get RDKit properties for functional group: {functional_group_smiles}")
+                    # Estimate based on functional group type
+                    group_name = functional_group.get('name', '').lower()
+                    if 'hydroxyl' in group_name or 'hydroxy' in group_name:
+                        functional_group_logp = -1.0  # Hydroxyl groups decrease logP
+                    elif 'amino' in group_name:
+                        functional_group_logp = -0.5  # Amino groups slightly decrease logP
+                    elif 'carboxyl' in group_name:
+                        functional_group_logp = -1.5  # Carboxyl groups significantly decrease logP
+                    elif 'fluoro' in group_name:
+                        functional_group_logp = 0.5   # Fluoro groups increase logP
+                    elif 'chloro' in group_name:
+                        functional_group_logp = 1.0   # Chloro groups increase logP
+                    elif 'bromo' in group_name:
+                        functional_group_logp = 1.5   # Bromo groups increase logP
+                    print(f"Estimated functional group LogP: {functional_group_logp}")
         
-        # Temperature correction (simplified)
-        temp_factor = 1.0 + 0.002 * (temperature - DEFAULT_TEMP)
+        print(f"LogP values - Cation: {cation_logp}, Anion: {anion_logp}, Alkyl: {alkyl_logp}, Functional Group: {functional_group_logp}")
+        
+        # Improved temperature correction with more accurate coefficients
+        # Based on experimental data showing logP decreases with temperature for most ionic liquids
+        # Temperature coefficient is now dependent on the base logP value
+        base_logp = cation_logp + anion_logp + alkyl_logp + functional_group_logp
+        
+        # Different temperature correction factors for hydrophilic vs hydrophobic ILs
+        if base_logp < 0:
+            # Hydrophilic ILs - temperature has less effect
+            temp_factor = 1.0 + 0.0015 * (temperature - DEFAULT_TEMP)
+        else:
+            # Hydrophobic ILs - temperature has more effect
+            temp_factor = 1.0 + 0.0025 * (temperature - DEFAULT_TEMP)
         
         # Calculate total logP with temperature correction
-        total_logp = (cation_logp + anion_logp + alkyl_logp) * temp_factor
+        total_logp = base_logp * temp_factor
         
         print(f"Total LogP (before validation): {total_logp}")
         

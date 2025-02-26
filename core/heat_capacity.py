@@ -17,7 +17,18 @@ unifac_params = {
     'SCN-': {'A': 95.0, 'B': 0.10, 'C': -0.0001},  # Literature data for thiocyanate ILs
     'DCA-': {'A': 100.0, 'B': 0.11, 'C': -0.0001}, # Literature data for dicyanamide ILs
     'CH2': {'A': 31.0, 'B': 0.05, 'C': -0.0001},   # Derived from alkyl chain length variations
-    'CH3': {'A': 35.0, 'B': 0.05, 'C': -0.0001}    # Terminal methyl contribution
+    'CH3': {'A': 35.0, 'B': 0.05, 'C': -0.0001},   # Terminal methyl contribution
+    # Added functional group parameters
+    'OH': {'A': 25.0, 'B': 0.04, 'C': -0.00005},   # Hydroxyl group
+    'NH2': {'A': 30.0, 'B': 0.045, 'C': -0.00006}, # Amino group
+    'COOH': {'A': 40.0, 'B': 0.05, 'C': -0.00007}, # Carboxylic acid group
+    'CN': {'A': 35.0, 'B': 0.04, 'C': -0.00005},   # Nitrile group
+    'SH': {'A': 28.0, 'B': 0.04, 'C': -0.00005},   # Thiol group
+    'F': {'A': 18.0, 'B': 0.02, 'C': -0.00003},    # Fluoro group
+    'Cl': {'A': 22.0, 'B': 0.025, 'C': -0.00004},  # Chloro group
+    'Br': {'A': 26.0, 'B': 0.03, 'C': -0.00004},   # Bromo group
+    'I': {'A': 30.0, 'B': 0.035, 'C': -0.00005},   # Iodo group
+    'Ether': {'A': 20.0, 'B': 0.03, 'C': -0.00004} # Ether group
 }
 
 def estimate_fragment_heat_capacity(fragment: Dict) -> Optional[float]:
@@ -67,6 +78,8 @@ def estimate_fragment_heat_capacity(fragment: Dict) -> Optional[float]:
                 base_adjustment = 0.95  # Reduced adjustment for NTf2
             else:
                 base_adjustment = 1.05
+        elif fragment['fragment_type'] == 'functional_group':
+            base_adjustment = 1.0  # Default adjustment for functional groups
         else:  # Alkyl Chain
             base_adjustment = 0.95
             
@@ -123,6 +136,8 @@ def get_fragment_type(fragment_name: str, fragment_type: str) -> str:
             return 'SCN-'
         elif 'dicyanamide' in name_lower or 'dca' in name_lower:
             return 'DCA-'
+        elif 'bis(trifluoromethylsulfonyl)imide' in name_lower or 'ntf2' in name_lower or 'tf2n' in name_lower:
+            return 'NTf2-'
         elif 'triflate' in name_lower or 'trifluoromethanesulfonate' in name_lower:
             return 'NTf2-'  # Using NTf2 parameters as approximation
         return 'BF4-'  # Default to BF4 if unknown
@@ -131,8 +146,32 @@ def get_fragment_type(fragment_name: str, fragment_type: str) -> str:
         if name_lower.startswith('methyl'):
             return 'CH3'
         return 'CH2'  # Default to CH2 for other alkyl chains
-    
-    return None
+        
+    elif fragment_type == 'functional_group':
+        if 'hydroxyl' in name_lower or 'hydroxy' in name_lower or 'alcohol' in name_lower:
+            return 'OH'
+        elif 'amino' in name_lower or 'amine' in name_lower:
+            return 'NH2'
+        elif 'carboxyl' in name_lower or 'acid' in name_lower:
+            return 'COOH'
+        elif 'nitrile' in name_lower or 'cyano' in name_lower:
+            return 'CN'
+        elif 'thiol' in name_lower or 'mercapto' in name_lower:
+            return 'SH'
+        elif 'fluoro' in name_lower:
+            return 'F'
+        elif 'chloro' in name_lower:
+            return 'Cl'
+        elif 'bromo' in name_lower:
+            return 'Br'
+        elif 'iodo' in name_lower:
+            return 'I'
+        elif 'ether' in name_lower or 'methoxy' in name_lower or 'ethoxy' in name_lower:
+            return 'Ether'
+        # Default case - return the most common functional group
+        return 'OH'
+        
+    return 'CH2'  # Default case
 
 def unifac_contribution(group_type: str, T: float = 298.15) -> float:
     """Calculate UNIFAC contribution with temperature dependence"""
@@ -172,6 +211,44 @@ def calculate_ionic_liquid_heat_capacity(ionic_liquid: Dict) -> Optional[float]:
         anion_cp = estimate_fragment_heat_capacity(ionic_liquid['anion'])
         alkyl_cp = estimate_fragment_heat_capacity(ionic_liquid['alkyl_chain'])
         
+        # Initialize functional group heat capacity
+        functional_group_cp = 0
+        
+        # Add functional group if present
+        if 'functional_group' in ionic_liquid and ionic_liquid['functional_group']:
+            ionic_liquid['functional_group']['fragment_type'] = 'functional_group'
+            functional_group_cp = estimate_fragment_heat_capacity(ionic_liquid['functional_group'])
+            print(f"  Functional Group: {f'{functional_group_cp:.1f}' if functional_group_cp is not None else 'None'} J/mol·K")
+            
+            # If functional group heat capacity couldn't be calculated, use a default value based on the group
+            if functional_group_cp is None:
+                group_name = ionic_liquid['functional_group'].get('name', '').lower()
+                # Map functional group names to UNIFAC parameters
+                if 'hydroxyl' in group_name or 'hydroxy' in group_name or 'alcohol' in group_name:
+                    functional_group_cp = unifac_contribution('OH')
+                elif 'amino' in group_name or 'amine' in group_name:
+                    functional_group_cp = unifac_contribution('NH2')
+                elif 'carboxyl' in group_name or 'acid' in group_name:
+                    functional_group_cp = unifac_contribution('COOH')
+                elif 'nitrile' in group_name or 'cyano' in group_name:
+                    functional_group_cp = unifac_contribution('CN')
+                elif 'thiol' in group_name or 'mercapto' in group_name:
+                    functional_group_cp = unifac_contribution('SH')
+                elif 'fluoro' in group_name:
+                    functional_group_cp = unifac_contribution('F')
+                elif 'chloro' in group_name:
+                    functional_group_cp = unifac_contribution('Cl')
+                elif 'bromo' in group_name:
+                    functional_group_cp = unifac_contribution('Br')
+                elif 'iodo' in group_name:
+                    functional_group_cp = unifac_contribution('I')
+                elif 'ether' in group_name or 'methoxy' in group_name or 'ethoxy' in group_name:
+                    functional_group_cp = unifac_contribution('Ether')
+                else:
+                    functional_group_cp = 20.0  # Default value
+                
+                print(f"  Using estimated functional group contribution: {functional_group_cp:.1f} J/mol·K")
+        
         print(f"\nComponent heat capacities:")
         print(f"  Cation: {f'{cation_cp:.1f}' if cation_cp is not None else 'None'} J/mol·K")
         print(f"  Anion: {f'{anion_cp:.1f}' if anion_cp is not None else 'None'} J/mol·K")
@@ -182,7 +259,7 @@ def calculate_ionic_liquid_heat_capacity(ionic_liquid: Dict) -> Optional[float]:
             return None
             
         # Total heat capacity is sum of fragments plus interaction terms
-        total_cp = cation_cp + anion_cp + alkyl_cp
+        total_cp = cation_cp + anion_cp + alkyl_cp + functional_group_cp
         
         # Add interaction terms based on hydrogen bonding
         cation_h_donors = ionic_liquid['cation'].get('h_bond_donors', 0)
@@ -190,8 +267,30 @@ def calculate_ionic_liquid_heat_capacity(ionic_liquid: Dict) -> Optional[float]:
         anion_h_donors = ionic_liquid['anion'].get('h_bond_donors', 0)
         anion_h_acceptors = ionic_liquid['anion'].get('h_bond_acceptors', 0)
         
+        # Add functional group hydrogen bonding if present
+        functional_group_h_donors = 0
+        functional_group_h_acceptors = 0
+        if 'functional_group' in ionic_liquid and ionic_liquid['functional_group']:
+            functional_group_h_donors = ionic_liquid['functional_group'].get('h_bond_donors', 0)
+            functional_group_h_acceptors = ionic_liquid['functional_group'].get('h_bond_acceptors', 0)
+            
+            # If not specified, set default values based on the group type
+            if functional_group_h_donors == 0 and functional_group_h_acceptors == 0:
+                group_name = ionic_liquid['functional_group'].get('name', '').lower()
+                if 'hydroxyl' in group_name:
+                    functional_group_h_donors = 1
+                    functional_group_h_acceptors = 1
+                elif 'amino' in group_name:
+                    functional_group_h_donors = 2
+                    functional_group_h_acceptors = 1
+        
         # Each H-bond pair contributes ~5 J/mol·K
-        h_bond_pairs = min(cation_h_donors, anion_h_acceptors) + min(anion_h_donors, cation_h_acceptors)
+        h_bond_pairs = (
+            min(cation_h_donors, anion_h_acceptors) + 
+            min(anion_h_donors, cation_h_acceptors) +
+            min(functional_group_h_donors, anion_h_acceptors) +
+            min(functional_group_h_acceptors, anion_h_donors)
+        )
         h_bond_contribution = 5.0 * h_bond_pairs
         
         print(f"  H-bond pairs: {h_bond_pairs}")

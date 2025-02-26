@@ -32,14 +32,27 @@ class ParetoOptimizer:
         }
     
     def normalize_value(self, value: float, min_val: float, max_val: float) -> float:
-        """Normalize a value to 0-1 scale"""
+        """
+        Normalize a value to 0-1 scale with special handling for zero values and edge cases
+        """
+        # Handle case where min and max are the same
         if max_val == min_val:
-            return 1.0 if value == max_val else 0.0
-        return (value - min_val) / (max_val - min_val)
+            # If the target value is exactly what we want, return 1.0
+            if value == max_val:
+                return 1.0
+            # For zero case, treat values close to zero as valid
+            if max_val == 0 and abs(value) < 1e-10:
+                return 1.0
+            return 0.0
+            
+        # Normal case - normalize between min and max
+        normalized = (value - min_val) / (max_val - min_val)
+        # Clamp between 0 and 1 to handle floating point errors
+        return max(0.0, min(1.0, normalized))
     
     def calculate_objective_score(self, properties: Dict[str, float]) -> float:
         """
-        Calculate the objective score for a set of properties
+        Calculate the objective score for a set of properties with improved handling of edge cases
         
         Args:
             properties: Dictionary of property values
@@ -61,8 +74,16 @@ class ParetoOptimizer:
             if weight == 0:
                 continue
                 
-            # Normalize the value
-            norm_value = self.normalize_value(value, constraint['min'], constraint['max'])
+            # Special handling for zero target values
+            if constraint['min'] == 0 and constraint['max'] == 0:
+                # If we want exact zero and get very close to zero
+                if abs(value) < 1e-10:
+                    norm_value = 1.0
+                else:
+                    norm_value = 0.0
+            else:
+                # Normal normalization
+                norm_value = self.normalize_value(value, constraint['min'], constraint['max'])
             
             # Invert if we want to minimize
             if not constraint['optimize_higher']:
@@ -77,7 +98,7 @@ class ParetoOptimizer:
     
     def is_dominated(self, a: Dict[str, float], b: Dict[str, float]) -> bool:
         """
-        Check if solution a is dominated by solution b
+        Check if solution a is dominated by solution b with improved handling of edge cases
         
         Args:
             a: First solution's properties
@@ -87,30 +108,36 @@ class ParetoOptimizer:
             bool: True if a is dominated by b
         """
         at_least_one_better = False
+        epsilon = 1e-10  # Small tolerance for floating point comparisons
         
         for prop_name, constraint in self.constraints.items():
             if constraint['weight'] == 0:  # Skip properties with zero weight
                 continue
                 
-            a_val = a.get(prop_name, 0)
-            b_val = b.get(prop_name, 0)
+            # Get property values, defaulting to the constraint bounds if not present
+            a_val = a.get(prop_name, constraint.get('min', 0) if not constraint['optimize_higher'] else constraint.get('max', 0))
+            b_val = b.get(prop_name, constraint.get('min', 0) if not constraint['optimize_higher'] else constraint.get('max', 0))
             
+            # Special handling for zero values
+            if abs(a_val) < epsilon and abs(b_val) < epsilon:
+                continue  # Consider them equal if both are effectively zero
+                
             if constraint['optimize_higher']:
-                if b_val < a_val:
+                if b_val < a_val - epsilon:  # Use epsilon for comparison
                     return False
-                if b_val > a_val:
+                if b_val > a_val + epsilon:  # Use epsilon for comparison
                     at_least_one_better = True
             else:
-                if b_val > a_val:
+                if b_val > a_val + epsilon:  # Use epsilon for comparison
                     return False
-                if b_val < a_val:
+                if b_val < a_val - epsilon:  # Use epsilon for comparison
                     at_least_one_better = True
         
         return at_least_one_better
     
     def find_pareto_front(self, solutions: List[Dict[str, float]]) -> List[Dict[str, float]]:
         """
-        Find the Pareto front from a list of solutions
+        Find the Pareto front from a list of solutions with improved handling for edge cases
         
         Args:
             solutions: List of dictionaries containing property values
@@ -118,9 +145,41 @@ class ParetoOptimizer:
         Returns:
             List[Dict]: Non-dominated solutions
         """
+        if not solutions:
+            return []
+            
+        # First filter solutions that are within constraints
+        valid_solutions = []
+        for solution in solutions:
+            is_valid = True
+            for prop_name, constraint in self.constraints.items():
+                if prop_name not in solution:
+                    continue
+                    
+                value = solution[prop_name]
+                min_val = constraint['min']
+                max_val = constraint['max']
+                
+                # Special handling for zero constraints
+                if min_val == 0 and max_val == 0:
+                    if abs(value) > 1e-10:  # Use small tolerance
+                        is_valid = False
+                        break
+                else:
+                    # Add small tolerance to bounds for floating point comparison
+                    if not (min_val - 1e-10 <= value <= max_val + 1e-10):
+                        is_valid = False
+                        break
+            
+            if is_valid:
+                valid_solutions.append(solution)
+        
+        if not valid_solutions:
+            return []
+            
         pareto_front = []
         
-        for solution in solutions:
+        for solution in valid_solutions:
             dominated = False
             
             # Compare with solutions already in Pareto front

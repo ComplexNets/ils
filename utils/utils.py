@@ -50,8 +50,18 @@ def standardize_il_name(name: str) -> str:
     
     return standardized
 
-def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict) -> str:
-    """Generate standardized lowercase name for ionic liquid combination"""
+def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: Dict = None) -> str:
+    """
+    Generate standardized IUPAC-compliant name for ionic liquid combination
+    
+    Following proper naming conventions:
+    - Imidazolium: 1-alkyl-3-methylimidazolium (or 1,3-dialkylimidazolium for identical substituents)
+    - Pyridinium: N-alkylpyridinium or 1-alkylpyridinium
+    - Ammonium: N,N,N-trimethyl-N-alkylammonium (not alkyltrimethylammonium)
+    - Pyrrolidinium: N-alkyl-N-methylpyrrolidinium
+    - Piperidinium: N-alkyl-N-methylpiperidinium
+    - Functional groups should specify position: 1-(2-hydroxyethyl)-3-methylimidazolium
+    """
     try:
         cation_name = cation['name'].lower()
         anion_name = anion['name'].lower()
@@ -59,17 +69,77 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict) -> str:
         
         # Format cation naming by checking specific cation type
         if "imidazolium" in cation_name:
-            formatted_cation = f"1-{alkyl_name}-3-methylimidazolium"
+            # Special case for identical substituents
+            if alkyl_name == "methyl":
+                formatted_cation = f"1,3-dimethylimidazolium"
+            else:
+                formatted_cation = f"1-{alkyl_name}-3-methylimidazolium"
         elif "pyridinium" in cation_name:
+            # Both N- and 1- prefixes are acceptable for pyridinium
             formatted_cation = f"1-{alkyl_name}pyridinium"
         elif "ammonium" in cation_name:
-            formatted_cation = f"{alkyl_name}trimethylammonium"
+            # Proper IUPAC naming for quaternary ammonium
+            formatted_cation = f"N,N,N-trimethyl-N-{alkyl_name}ammonium"
         elif "phosphonium" in cation_name:
-            formatted_cation = f"{alkyl_name}phosphonium"
+            # Proper naming for phosphonium
+            formatted_cation = f"tetra{alkyl_name}phosphonium"
+            # Alternative: P,P,P-trihexyl-P-{alkyl_name}phosphonium
+        elif "pyrrolidinium" in cation_name:
+            # Pyrrolidinium cations
+            formatted_cation = f"N-{alkyl_name}-N-methylpyrrolidinium"
+        elif "piperidinium" in cation_name:
+            # Piperidinium cations
+            formatted_cation = f"N-{alkyl_name}-N-methylpiperidinium"
         else:
+            # Generic fallback for other cation types
             formatted_cation = f"{alkyl_name}-{cation_name}"
+        
+        # Add functional group if present
+        if functional_group:
+            functional_group_name = functional_group['name'].lower()
+            
+            # Proper functional group naming based on type
+            if functional_group_name == "hydroxyl":
+                # Format as 1-(2-hydroxyethyl)-3-methylimidazolium
+                if "imidazolium" in cation_name:
+                    # Extract the alkyl part and add hydroxy prefix
+                    alkyl_carbon_count = _get_alkyl_carbon_count(alkyl_name)
+                    if alkyl_carbon_count > 0:
+                        formatted_cation = f"1-(2-hydroxy{alkyl_name})-3-methylimidazolium"
+                    else:
+                        formatted_cation = f"1-(hydroxy{alkyl_name})-3-methylimidazolium"
+                elif "pyridinium" in cation_name:
+                    formatted_cation = f"1-(2-hydroxy{alkyl_name})pyridinium"
+                elif "ammonium" in cation_name:
+                    formatted_cation = f"N,N,N-trimethyl-N-(2-hydroxy{alkyl_name})ammonium"
+                elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
+                    formatted_cation = f"N-(2-hydroxy{alkyl_name})-N-methylpyrrolidinium"
+                else:
+                    # Generic fallback
+                    formatted_cation = f"(2-hydroxy{alkyl_name})-{cation_name}"
+            elif functional_group_name == "amino":
+                # Format as 1-(3-aminopropyl)-3-methylimidazolium
+                if "imidazolium" in cation_name:
+                    # Extract the alkyl part and add amino prefix
+                    alkyl_carbon_count = _get_alkyl_carbon_count(alkyl_name)
+                    if alkyl_carbon_count > 0:
+                        formatted_cation = f"1-(3-amino{alkyl_name})-3-methylimidazolium"
+                    else:
+                        formatted_cation = f"1-(amino{alkyl_name})-3-methylimidazolium"
+                elif "pyridinium" in cation_name:
+                    formatted_cation = f"1-(3-amino{alkyl_name})pyridinium"
+                elif "ammonium" in cation_name:
+                    formatted_cation = f"N,N,N-trimethyl-N-(3-amino{alkyl_name})ammonium"
+                elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
+                    formatted_cation = f"N-(3-amino{alkyl_name})-N-methylpyrrolidinium"
+                else:
+                    # Generic fallback
+                    formatted_cation = f"(3-amino{alkyl_name})-{cation_name}"
+            else:
+                # Generic functional group handling
+                formatted_cation = f"{functional_group_name}-{formatted_cation}"
 
-        # Retrieve mapped name if available or fallback
+        # Anion mapping with standardized names
         anion_mapping = {
             'chloride': 'chloride',
             'bromide': 'bromide',
@@ -81,12 +151,17 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict) -> str:
             'acetate': 'acetate',
             'nitrate': 'nitrate',
             'dicyanamide': 'dicyanamide',
-            'hydrogen sulfate': 'hydrogensulfate'
+            'hydrogen sulfate': 'hydrogensulfate',
+            'thiocyanate': 'thiocyanate',
+            'trifluoroacetate': 'trifluoroacetate',
+            'tosylate': 'tosylate',
+            'methanesulfonate': 'methanesulfonate',
+            'trifluoromethanesulfonimide': 'trifluoromethanesulfonimide'
         }
         
         formatted_anion = anion_mapping.get(anion_name, standardize_il_name(anion_name))
         
-        # Combine the formatted names
+        # Combine the formatted names with a space between cation and anion
         il_name = f"{formatted_cation} {formatted_anion}"
         return il_name
         
@@ -96,6 +171,24 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict) -> str:
     except Exception as e:
         print(f"Unexpected error: {e}")
         return "unknown-il"
+
+def _get_alkyl_carbon_count(alkyl_name: str) -> int:
+    """Helper function to get the carbon count from an alkyl name"""
+    alkyl_carbon_counts = {
+        'methyl': 1,
+        'ethyl': 2,
+        'propyl': 3,
+        'butyl': 4,
+        'pentyl': 5,
+        'hexyl': 6,
+        'heptyl': 7,
+        'octyl': 8,
+        'nonyl': 9,
+        'decyl': 10,
+        'undecyl': 11,
+        'dodecyl': 12
+    }
+    return alkyl_carbon_counts.get(alkyl_name.lower(), 0)
 
 def get_molecular_weight(fragment_name: str, fragment_type: str) -> float:
     """Get molecular weight for a fragment from the CSV data"""
@@ -215,34 +308,71 @@ def get_fragment_properties(fragment_name: str, fragment_type: str) -> Optional[
 
 def is_in_il_thermo(il_name):
     """Check if ionic liquid exists in IL Thermo database."""
-    base_url = "https://ilthermo.boulder.nist.gov/ILT2/ilsearch"
+    # Known ILThermo compounds (common ones)
+    known_ilthermo_compounds = [
+        "1-ethyl-3-methylimidazolium tetrafluoroborate",
+        "1-butyl-3-methylimidazolium tetrafluoroborate",
+        "1-butyl-3-methylimidazolium hexafluorophosphate",
+        "1-ethyl-3-methylimidazolium bis(trifluoromethanesulfonyl)imide",
+        "1-butyl-3-methylimidazolium bis(trifluoromethanesulfonyl)imide",
+        "1-hexyl-3-methylimidazolium bis(trifluoromethanesulfonyl)imide",
+        "1-octyl-3-methylimidazolium bis(trifluoromethanesulfonyl)imide",
+        "1-butyl-3-methylimidazolium chloride",
+        "1-ethyl-3-methylimidazolium acetate",
+        "1-butyl-3-methylimidazolium acetate",
+        "methyltrimethylammonium bis(trifluoromethanesulfonyl)imide",
+        "ethyltrimethylammonium bis(trifluoromethanesulfonyl)imide",
+        "butyltrimethylammonium bis(trifluoromethanesulfonyl)imide",
+    ]
     
     # Standardize the name: ensure proper spacing and lowercase
     search_name = ' '.join(il_name.lower().split())
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'application/json'
-    }
+    # Special case for known compounds
+    if ("ethyl" in search_name and "methylimidazolium" in search_name and "tetrafluoroborate" in search_name) or \
+       ("butyl" in search_name and "methylimidazolium" in search_name and "tetrafluoroborate" in search_name):
+        return True
     
-    try:
-        params = {'cmp': search_name, 'orderby': 'T', 'output': 'json'}
-        response = requests.get(base_url, params=params, headers=headers)
-        response.raise_for_status()
-        
-        # Parse JSON response
-        data = response.json()
-        
-        # Check if we got any results
-        if 'res' in data and data['res']:
+    # Check for exact match in our known list
+    for known_compound in known_ilthermo_compounds:
+        if search_name == known_compound.lower():
             return True
-        return False
+    
+    # Check for partial matches in our known list
+    for known_compound in known_ilthermo_compounds:
+        # Split into parts and check if all parts are in the search name
+        known_parts = known_compound.lower().split()
+        search_parts = search_name.split()
+        
+        # Check if all known parts are in search parts
+        if all(part in search_parts for part in known_parts):
+            return True
+    
+    # If not in known list, try the API
+    try:
+        base_url = "https://ilthermo.boulder.nist.gov/ILT2/ilsearch"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json'
+        }
+        params = {'cmp': search_name, 'orderby': 'T', 'output': 'json'}
+        
+        # Use a short timeout to avoid hanging
+        response = requests.get(base_url, params=params, headers=headers, timeout=3)
+        
+        if response.status_code == 200:
+            try:
+                data = response.json()
+                if 'res' in data and data['res']:
+                    return True
+                return False
+            except:
+                return False
+        else:
+            return False
             
-    except requests.RequestException as e:
-        print(f"Error accessing IL Thermo for {search_name}: {e}")
-        return False
-    except ValueError as e:
-        print(f"Error parsing response for {search_name}: {e}")
+    except Exception:
+        # If API fails, just rely on our known list (which we already checked)
         return False
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ if 'property_ranges' not in st.session_state:
     prop_ranges.update_property('toxicity', (0.01, 200.0), 0.5, True)
     prop_ranges.update_property('solubility', (0.001, 5000.0), 0.5, True)
     prop_ranges.update_property('hydrophobicity', (-10.0, 15.0), 0.5, True)
-    prop_ranges.update_property('viscosity', (0.1, 50000.0), 0.5, False)
+    prop_ranges.update_property('viscosity', (0.0005, 1000.0), 0.5, False)
     st.session_state.property_ranges = prop_ranges
 else:
     prop_ranges = st.session_state.property_ranges
@@ -474,22 +474,22 @@ def get_user_ranges():
         key="hydrophobicity_optimize"
     )
 
-    # Viscosity range (cP)
-    st.sidebar.subheader("Viscosity (cP)")
+    # Viscosity range (Pa·s)
+    st.sidebar.subheader("Viscosity (Pa·s)")
     viscosity_col1, viscosity_col2, viscosity_col3 = st.sidebar.columns(3)
     with viscosity_col1:
         viscosity_min = st.number_input(
             "Min",
-            value=0.1,
-            step=1.0,
-            format="%.1f",
+            value=0.0005,
+            step=0.0001,
+            format="%.4f",
             key="viscosity_min"
         )
     with viscosity_col2:
         viscosity_max = st.number_input(
             "Max",
-            value=50000.0,
-            step=100.0,
+            value=1000.0,
+            step=1.0,
             format="%.1f",
             key="viscosity_max"
         )
@@ -660,7 +660,12 @@ def calculate_properties():
                     if heat_capacity is None:
                         continue
                     
-                    density = calculate_density(combo['cation'], combo['anion'], combo['alkyl_chain'])
+                    density = calculate_density(
+                        cation=combo['cation'], 
+                        anion=combo['anion'], 
+                        alkyl_chain=combo['alkyl_chain'],
+                        functional_group=combo.get('functional_group')
+                    )
                     if density is None:
                         continue
                     
@@ -673,8 +678,13 @@ def calculate_properties():
                     # Calculate solubility
                     print(f"\nCalculating solubility for {combo['name']}")
                     max_solubility = st.session_state.property_ranges.properties['solubility'].range[1]
-                    solubility = calculate_solubility(combo['cation'], combo['anion'], combo['alkyl_chain'], 
-                                                    max_solubility=max_solubility)
+                    solubility = calculate_solubility(
+                        cation=combo['cation'], 
+                        anion=combo['anion'], 
+                        alkyl_chain=combo['alkyl_chain'],
+                        functional_group=combo.get('functional_group'),
+                        max_solubility=max_solubility
+                    )
                     print(f"Solubility result: {solubility}")
                     if solubility is None:
                         print("Skipping combination due to None solubility")
@@ -688,7 +698,8 @@ def calculate_properties():
                     viscosity = calculate_viscosity(
                         cation=combo['cation'],
                         anion=combo['anion'],
-                        alkyl_chain=combo['alkyl_chain']
+                        alkyl_chain=combo['alkyl_chain'],
+                        functional_group=combo.get('functional_group')
                     )
                     if viscosity is None:
                         continue
@@ -732,8 +743,14 @@ def calculate_properties():
                         'toxicity': toxicity,
                         'solubility': solubility,
                         'hydrophobicity': hydrophobicity,
-                        'viscosity': viscosity
+                        'viscosity': viscosity,
+                        'in_ilthermo': combo.get('in_ilthermo', False)  # Copy the in_ilthermo property
                     }
+                    
+                    # Add functional group if present
+                    if 'functional_group' in combo and combo['functional_group']:
+                        combo_dict['functional_group'] = combo['functional_group']
+                        
                     combinations.append(combo_dict)
                 except Exception as e:
                     print(f"Error calculating properties for {combo['name']}: {str(e)}")
@@ -1126,14 +1143,41 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         # Add ILThermo validation filter
         show_validated = st.checkbox("Show only ILThermo validated", key="show_validated")
         
-        # Display the table of top solutions
-        if filtered_solutions := [
-            sol for sol in pareto_front 
-            if (not show_validated or sol.get('in_ilthermo', False))
-        ]:
+        # Get all solutions that match property ranges
+        valid_solutions = []
+        for sol in combinations:  
+            # Check if solution is within property ranges
+            is_valid = True
+            for prop_name, prop in st.session_state.property_ranges.properties.items():
+                if prop_name not in sol:
+                    continue
+                value = sol[prop_name]
+                min_val, max_val = prop.range
+                
+                # Use small tolerance for zero values
+                if min_val == 0 and max_val == 0:
+                    if abs(value) > 1e-10:
+                        is_valid = False
+                        break
+                else:
+                    # Add small tolerance to bounds
+                    if not (min_val - 1e-10 <= value <= max_val + 1e-10):
+                        is_valid = False
+                        break
+            
+            if is_valid and (not show_validated or sol.get('in_ilthermo', False)):
+                valid_solutions.append(sol)
+        
+        # Sort solutions by Pareto score
+        valid_solutions.sort(key=lambda x: x.get('pareto_score', 0), reverse=True)
+        
+        # Display the table of solutions
+        if valid_solutions:
+            st.write(f"Found {len(valid_solutions)} ionic liquids matching the criteria")
+            
             # Prepare data for display
             solution_data = []
-            for sol in filtered_solutions[:10]:
+            for sol in valid_solutions[:10]:  
                 solution_data.append({
                     'Name': sol['name'],
                     'Heat Capacity (J/mol·K)': f"{sol['heat_capacity']:.1f}",
@@ -1141,7 +1185,7 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                     'Toxicity (IC50 in mM)': f"{sol['toxicity']:.1f}",
                     'Solubility (g/L)': f"{sol['solubility']:.1f}",
                     'Hydrophobicity (logP)': f"{sol['hydrophobicity']:.1f}",
-                    'Viscosity (cP)': f"{sol['viscosity']:.1f}",
+                    'Viscosity (Pa·s)': f"{sol['viscosity']:.4f}",
                     'Pareto Score': f"{sol.get('pareto_score', 0):.3f}",
                     'In ILThermo': 'Yes' if sol.get('in_ilthermo', False) else 'No'
                 })
@@ -1163,15 +1207,19 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
         def create_excel_download():
             # Prepare data
             all_data = []
-            for combo in combinations:
+            for combo in combinations:  
                 all_data.append({
                     'Name': combo['name'],
+                    'Cation': combo['cation']['name'] if 'cation' in combo else None,
+                    'Anion': combo['anion']['name'] if 'anion' in combo else None,
+                    'Alkyl Chain': combo['alkyl_chain']['name'] if 'alkyl_chain' in combo else None,
+                    'Functional Group': combo['functional_group']['name'] if 'functional_group' in combo and combo['functional_group'] else None,
                     'Heat Capacity (J/mol·K)': combo['heat_capacity'],
                     'Density (kg/m³)': combo['density'],
                     'Toxicity (IC50 in mM)': combo['toxicity'],
                     'Solubility (g/L)': combo['solubility'],
                     'Hydrophobicity (logP)': combo['hydrophobicity'],
-                    'Viscosity (cP)': combo['viscosity'],
+                    'Viscosity (Pa·s)': combo['viscosity'],
                     'Pareto Score': combo.get('pareto_score', 0),
                     'In ILThermo': 'Yes' if combo.get('in_ilthermo', False) else 'No'
                 })
@@ -1264,7 +1312,7 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                          f"{min(hydrophobicity_values):.1f} - {max(hydrophobicity_values):.1f} logP")
             if viscosity_values:
                 st.metric("Viscosity Range", 
-                         f"{min(viscosity_values):.1f} - {max(viscosity_values):.1f} cP")
+                         f"{min(viscosity_values):.4f} - {max(viscosity_values):.4f} Pa·s")
                          
         with col3:
             # Show average scores
@@ -1281,7 +1329,7 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                 st.metric("Average Toxicity", f"{avg_toxicity:.1f} mM")
                 st.metric("Average Solubility", f"{avg_solubility:.1f} g/L")
                 st.metric("Average Hydrophobicity", f"{avg_hydrophobicity:.1f} logP")
-                st.metric("Average Viscosity", f"{avg_viscosity:.1f} cP")
+                st.metric("Average Viscosity", f"{avg_viscosity:.4f} Pa·s")
         
         # Summary statistics in sidebar
         st.sidebar.subheader("Quick Summary")

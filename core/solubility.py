@@ -82,39 +82,37 @@ def calculate_group_contribution(fragment: Dict) -> float:
     
     return base_contribution * environment_multiplier
 
-def calculate_solubility(cation: Dict, anion: Dict, alkyl_chain: Dict, temperature: float = 298.15, max_solubility: float = 1000.0) -> Optional[float]:
+def calculate_solubility(cation: Dict, anion: Dict, alkyl_chain: Dict, functional_group: Dict = None,
+                      temperature: float = 298.15, max_solubility: float = 1000.0) -> Optional[float]:
     """
-    Calculate the approximate solubility of an ionic liquid in water.
-    
-    This is a simplified approach based on group contributions, not a full UNIFAC-IL implementation.
-    It does not include:
-    - Complete group-group interaction parameters
-    - Activity coefficient calculations
-    - Henry's law or detailed partitioning calculations
-    
-    The method provides quick screening estimates suitable for comparative analysis
-    but should not be used where precise thermodynamic calculations are required.
+    Calculate water solubility of an ionic liquid in g/L
     
     Args:
-        cation: Dictionary containing cation properties
-        anion: Dictionary containing anion properties
-        alkyl_chain: Dictionary containing alkyl chain properties
-        temperature: Temperature in Kelvin (default: 298.15 K)
-        max_solubility: Maximum allowed solubility value (default: 1000.0 g/L)
+        cation: Dictionary containing cation information
+        anion: Dictionary containing anion information
+        alkyl_chain: Dictionary containing alkyl chain information
+        functional_group: Dictionary containing functional group information (optional)
+        temperature: Temperature in K (default: 298.15 K)
+        max_solubility: Maximum solubility value to cap results (default: 1000 g/L)
         
     Returns:
-        float: Estimated solubility in g/L, or None if validation fails
+        Solubility in g/L or None if calculation fails
     """
     # Calculate individual contributions
     cation_contribution = calculate_group_contribution(cation)
     anion_contribution = calculate_group_contribution(anion)
     alkyl_contribution = calculate_group_contribution(alkyl_chain)
     
+    if functional_group:
+        functional_group_contribution = calculate_group_contribution(functional_group)
+    else:
+        functional_group_contribution = 0.0
+    
     # Temperature correction (simplified Arrhenius-like relationship)
     temp_factor = math.exp(0.05 * (temperature - 298.15) / 298.15)
     
     # Calculate total solubility
-    total_contribution = cation_contribution + anion_contribution + alkyl_contribution
+    total_contribution = cation_contribution + anion_contribution + alkyl_contribution + functional_group_contribution
     solubility = math.exp(total_contribution) * temp_factor
     
     # Validate result

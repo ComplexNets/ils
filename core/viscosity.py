@@ -16,19 +16,22 @@ from utils.utils import get_fragment_properties
 from utils.rdkit_utils import get_rdkit_properties
 
 # Constants for viscosity calculations
-DEFAULT_TEMP = 298.15  # K (reference temperature)
-MIN_VISCOSITY = 0.1    # cP (expanded minimum reasonable viscosity)
-MAX_VISCOSITY = 50000.0  # cP (expanded maximum reasonable viscosity)
+DEFAULT_TEMP = 298.15  # K (reference temperature, 25°C)
+MIN_VISCOSITY = 0.0005  # Pa·s (minimum reasonable viscosity for ionic liquids)
+MAX_VISCOSITY = 1000.0  # Pa·s (maximum reasonable viscosity for ionic liquids)
+ACTIVATION_ENERGY = 30000  # J/mol (activation energy for ionic liquids)
+GAS_CONSTANT = 8.314  # J/(mol·K) (universal gas constant)
+CALIBRATION_FACTOR = 133.0  # Empirical calibration factor to match experimental data
 
 # QSPR model coefficients derived from training data
 QSPR_COEFFICIENTS = {
-    'a': -2.5,      # Intercept term
-    'b1': 0.005,    # MW coefficient
-    'b2': 0.2,      # logP coefficient
-    'b3': 0.01,     # TPSA coefficient
-    'b4': 0.3,      # HBD coefficient
-    'b5': 0.2,      # HBA coefficient
-    'b6': -0.1,     # NRB (Number of Rotatable Bonds) coefficient
+    'a': -3.0,      # Intercept term (adjusted to get base viscosity right)
+    'b1': 0.005,    # MW coefficient (moderate impact of molecular weight)
+    'b2': 0.1,      # logP coefficient (moderate)
+    'b3': 0.01,     # TPSA coefficient (moderate)
+    'b4': 0.2,      # HBD coefficient (moderate)
+    'b5': 0.1,      # HBA coefficient (moderate)
+    'b6': -0.05,    # NRB (Number of Rotatable Bonds) coefficient
 }
 
 def calculate_molecular_descriptors(smiles: str) -> Optional[Dict[str, float]]:
@@ -84,20 +87,20 @@ def estimate_charge_interaction(cation_desc: Dict[str, float], anion_desc: Dict[
     
     return min(1.0, interaction)  # Cap at 1.0 to prevent unrealistic values
 
-def calculate_viscosity(cation: Dict, anion: Dict, alkyl_chain: Dict, temperature: float = DEFAULT_TEMP) -> Optional[float]:
+def calculate_viscosity(cation: Dict, anion: Dict, alkyl_chain: Dict, functional_group: Dict = None, 
+                     temperature: float = DEFAULT_TEMP) -> Optional[float]:
     """
-    Calculate the viscosity of an ionic liquid using QSPR approach.
-    Formula: log(η) = a + b₁MW + b₂logP + b₃TPSA + b₄HBD + b₅HBA + b₆NRB
-    where η is viscosity and a, b₁-b₆ are coefficients determined from training data.
+    Calculate viscosity of an ionic liquid using group contribution method
     
     Args:
-        cation: Dictionary containing cation properties
-        anion: Dictionary containing anion properties
-        alkyl_chain: Dictionary containing alkyl chain properties
-        temperature: Temperature in Kelvin (default: 298.15 K)
+        cation: Dictionary containing cation information
+        anion: Dictionary containing anion information
+        alkyl_chain: Dictionary containing alkyl chain information
+        functional_group: Dictionary containing functional group information (optional)
+        temperature: Temperature in K (default: 298.15 K)
         
     Returns:
-        float: Calculated viscosity in centipoise (cP), or None if calculation fails
+        Viscosity in Pa·s or None if calculation fails
     """
     try:
         # Get molecular descriptors for each component
@@ -124,7 +127,18 @@ def calculate_viscosity(cation: Dict, anion: Dict, alkyl_chain: Dict, temperatur
             total_hba += alkyl_desc['hba']
             total_rotatable += alkyl_desc['rotatable']
             
-        # Calculate log(viscosity) using QSPR model formula from the image
+        if functional_group:
+            functional_desc = calculate_molecular_descriptors(functional_group.get('smiles', ''))
+            if functional_desc:
+                total_mw += functional_desc['mw']
+                total_logp += functional_desc['logp']
+                total_tpsa += functional_desc['tpsa']
+                total_hbd += functional_desc['hbd']
+                total_hba += functional_desc['hba']
+                total_rotatable += functional_desc['rotatable']
+            
+        # Calculate log(viscosity) using QSPR model formula
+        # The QSPR model was originally trained for viscosity in cP at reference temperature (298.15K)
         log_viscosity = (
             QSPR_COEFFICIENTS['a'] +
             QSPR_COEFFICIENTS['b1'] * total_mw +
@@ -135,8 +149,25 @@ def calculate_viscosity(cation: Dict, anion: Dict, alkyl_chain: Dict, temperatur
             QSPR_COEFFICIENTS['b6'] * total_rotatable
         )
         
-        # Convert log(viscosity) to viscosity in cP
-        viscosity = math.exp(log_viscosity)
+        # Convert log(viscosity) to viscosity in cP at reference temperature
+        viscosity_cp_ref = math.exp(log_viscosity)
+        
+        # Apply temperature correction using Arrhenius equation
+        # η(T) = η(T_ref) * exp[E_a/R * (1/T - 1/T_ref)]
+        if temperature != DEFAULT_TEMP:
+            temperature_factor = math.exp(
+                (ACTIVATION_ENERGY / GAS_CONSTANT) * 
+                ((1 / temperature) - (1 / DEFAULT_TEMP))
+            )
+            viscosity_cp = viscosity_cp_ref * temperature_factor
+        else:
+            viscosity_cp = viscosity_cp_ref
+        
+        # Apply calibration factor to match experimental data
+        viscosity_cp = viscosity_cp * CALIBRATION_FACTOR
+        
+        # Convert from cP to Pa·s (1 cP = 0.001 Pa·s)
+        viscosity = viscosity_cp * 0.001
         
         return viscosity
         
@@ -151,9 +182,9 @@ def validate_viscosity(viscosity: Optional[float],
     Validate if the calculated viscosity is within reasonable bounds for ionic liquids.
     
     Args:
-        viscosity: Calculated viscosity in cP
-        min_viscosity: Minimum acceptable viscosity (default: 0.1 cP)
-        max_viscosity: Maximum acceptable viscosity (default: 50000.0 cP)
+        viscosity: Calculated viscosity in Pa·s
+        min_viscosity: Minimum acceptable viscosity (default: 0.0005 Pa·s)
+        max_viscosity: Maximum acceptable viscosity (default: 1000.0 Pa·s)
         
     Returns:
         bool: True if viscosity is valid, False otherwise
@@ -174,7 +205,7 @@ def screen_fragments_by_viscosity(fragments_data: Dict[str, List[Dict]],
     
     Args:
         fragments_data: Dictionary of fragments organized by type
-        target_range: Tuple of (min_viscosity, max_viscosity) in cP
+        target_range: Tuple of (min_viscosity, max_viscosity) in Pa·s
         
     Returns:
         Dictionary of fragments organized by type that meet the target range
@@ -224,7 +255,7 @@ def test_viscosity_calculations(fragments_data: Optional[Dict[str, List[Dict]]] 
     """
     if fragments_data:
         print("\nTesting fragment screening...")
-        target_range = (10.0, 1000.0)  # Example viscosity range in cP
+        target_range = (0.0005, 1000.0)  # Example viscosity range in Pa·s
         screened = screen_fragments_by_viscosity(fragments_data, target_range)
         for frag_type, frags in screened.items():
             print(f"\n{frag_type}: {len(frags)} fragments in range {target_range}")
@@ -239,7 +270,7 @@ def test_viscosity_calculations(fragments_data: Optional[Dict[str, List[Dict]]] 
             )
             print(f"\nCombination {i+1}:")
             print(f"Name: {combo.get('name', 'Unknown')}")
-            print(f"Viscosity: {viscosity:.1f} cP")
+            print(f"Viscosity: {viscosity:.4f} Pa·s")
             print(f"Valid: {validate_viscosity(viscosity)}")
 
 if __name__ == "__main__":

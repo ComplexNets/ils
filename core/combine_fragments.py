@@ -167,7 +167,7 @@ def validate_combination(combination_tuple, validator=None):
         total_mw = sum(get_molecular_weight(f['name'], f['fragment_type']) for f in fragments)
         
         # Generate IL name and check ILThermo
-        il_name = generate_il_name(cation, anion, alkyl)
+        il_name = generate_il_name(cation, anion, alkyl, functional_group)
         in_ilthermo = is_in_il_thermo(il_name)
         
         # Create the combination object

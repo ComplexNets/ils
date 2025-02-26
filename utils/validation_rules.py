@@ -260,7 +260,7 @@ class MolecularValidator:
             return None
 
     def _alkyl_chain_count(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """Validate that the number of alkyl chains matches the cation valence"""
+        """Validate that the number of substituents (alkyl chains + functional groups) is appropriate for the cation"""
         try:
             # Get cation from fragments
             cation = next((f for f in fragments if f['fragment_type'].lower() == 'cation'), None)
@@ -275,15 +275,20 @@ class MolecularValidator:
             if cation_valence is None:
                 return False, f"Could not calculate valence for cation: {cation['name']}"
                 
-            # Count alkyl chains
+            # Count substituents (both alkyl chains and functional groups)
             alkyl_chains = [f for f in fragments if f['fragment_type'].lower() == 'alkyl_chain']
-            alkyl_chain_count = len(alkyl_chains)
+            functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']
+            total_substituents = len(alkyl_chains) + len(functional_groups)
             
-            # Validate chain count matches cation valence
-            if alkyl_chain_count != cation_valence:
-                return False, f"Number of alkyl chains ({alkyl_chain_count}) does not match cation valence ({cation_valence})"
+            # Validate total substituents is not more than cation valence
+            if total_substituents > cation_valence:
+                return False, f"Total substituents ({total_substituents}) exceeds cation valence ({cation_valence})"
             
-            return True, f"Valid alkyl chain count ({alkyl_chain_count})"
+            # Must have at least one alkyl chain
+            if len(alkyl_chains) == 0:
+                return False, "Must have at least one alkyl chain"
+            
+            return True, f"Valid substituent count (alkyl chains: {len(alkyl_chains)}, functional groups: {len(functional_groups)})"
             
         except Exception as e:
             return False, f"Error validating alkyl chain count: {str(e)}"
@@ -389,7 +394,7 @@ class MolecularValidator:
             for chain in alkyl_chains:
                 chain_valence = self._get_paper_valence(chain['fragment_type'], chain['name'])
                 if chain_valence is not None:
-                    total_valence -= chain_valence
+                    total_valence -= chain_valence  # Subtracting chain_valence since it consumes cation valence
             
             # Add functional group valences
             functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']

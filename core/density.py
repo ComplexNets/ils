@@ -196,7 +196,7 @@ def calculate_molecular_volume(fragment: Dict) -> float:
         print(f"Error calculating molecular volume: {str(e)}")
         return 0.0
 
-def calculate_density(cation: Dict, anion: Dict, alkyl_chain: Dict, 
+def calculate_density(cation: Dict, anion: Dict, alkyl_chain: Dict, functional_group: Dict = None,
                      temperature: float = T_REF, pressure: float = P_REF) -> Optional[float]:
     """
     Calculate ionic liquid density using modified Ye & Shreeve method.
@@ -207,6 +207,7 @@ def calculate_density(cation: Dict, anion: Dict, alkyl_chain: Dict,
         cation: Dictionary containing cation properties
         anion: Dictionary containing anion properties
         alkyl_chain: Dictionary containing alkyl chain properties
+        functional_group: Dictionary containing functional group properties (optional)
         temperature: Temperature in K (fixed at 298.15 K)
         pressure: Pressure in MPa (fixed at 0.1 MPa)
     
@@ -223,6 +224,26 @@ def calculate_density(cation: Dict, anion: Dict, alkyl_chain: Dict,
         anion_props = get_fragment_properties(anion['name'], anion['fragment_type'])
         alkyl_props = get_fragment_properties(alkyl_chain['name'], alkyl_chain['fragment_type'])
         
+        # Initialize functional group properties
+        functional_group_props = None
+        mw_functional_group = 0.0
+        v_functional_group = 0.0
+        
+        # Process functional group if present
+        if functional_group:
+            functional_group_props = get_fragment_properties(functional_group['name'], functional_group['fragment_type'])
+            if functional_group_props:
+                mw_functional_group = float(functional_group_props['molecular_weight'])
+                # If molecular weight is not available, estimate based on the group type
+                if mw_functional_group <= 0:
+                    group_name = functional_group['name'].lower()
+                    if 'hydroxyl' in group_name:
+                        mw_functional_group = 17.0  # -OH group
+                    elif 'amino' in group_name:
+                        mw_functional_group = 16.0  # -NH2 group
+                    else:
+                        mw_functional_group = 15.0  # Default value
+        
         if not all([cation_props, anion_props, alkyl_props]):
             print("Warning: Could not get properties for all fragments")
             return None
@@ -235,18 +256,31 @@ def calculate_density(cation: Dict, anion: Dict, alkyl_chain: Dict,
             print("Warning: Invalid molecular weight(s)")
             return None
             
-        total_mw = mw_cation + mw_anion + mw_alkyl
+        total_mw = mw_cation + mw_anion + mw_alkyl + mw_functional_group
         
         # Calculate molecular volumes with validation
         v_cation = calculate_molecular_volume(cation)
         v_anion = calculate_molecular_volume(anion)
         v_alkyl = calculate_molecular_volume(alkyl_chain)
         
+        # Calculate functional group volume if present
+        if functional_group:
+            v_functional_group = calculate_molecular_volume(functional_group)
+            # If volume calculation fails, estimate based on the group type
+            if v_functional_group <= 0:
+                group_name = functional_group['name'].lower()
+                if 'hydroxyl' in group_name:
+                    v_functional_group = 10.0  # Approximate volume for -OH group
+                elif 'amino' in group_name:
+                    v_functional_group = 15.0  # Approximate volume for -NH2 group
+                else:
+                    v_functional_group = 12.0  # Default value
+        
         if any(v <= 0 for v in [v_cation, v_anion, v_alkyl]):
             print("Warning: Invalid molecular volume(s)")
             return None
             
-        total_volume = v_cation + v_anion + v_alkyl
+        total_volume = v_cation + v_anion + v_alkyl + v_functional_group
         
         # Convert volume from Å³ to nm³
         total_volume_nm3 = total_volume / 1000
@@ -254,13 +288,6 @@ def calculate_density(cation: Dict, anion: Dict, alkyl_chain: Dict,
         # Calculate density with proper unit conversions
         # Convert from g/mol to kg/mol, nm³ to m³
         density = (total_mw / 1000) / (total_volume_nm3 * 1e-27 * 6.02214076e23)
-        
-        # Add debug information
-        print(f"Debug: Cation MW={mw_cation:.2f}g/mol, V={v_cation:.2f}Å³")
-        print(f"Debug: Anion MW={mw_anion:.2f}g/mol, V={v_anion:.2f}Å³")
-        print(f"Debug: Alkyl MW={mw_alkyl:.2f}g/mol, V={v_alkyl:.2f}Å³")
-        print(f"Debug: Total MW={total_mw:.2f}g/mol, V={total_volume:.2f}Å³")
-        print(f"Debug: Calculated density={density:.2f}kg/m³")
         
         return density
         

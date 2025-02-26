@@ -56,9 +56,9 @@ class PropertyRanges:
                 optimize_higher=True
             ),
             'viscosity': PropertyCriteria(
-                range=(0.1, 50000.0),  # Expanded for low viscosity and extremely viscous ILs
+                range=(0.0005, 1000.0),  # Range in Pa·s for typical ionic liquids
                 importance=0.5,
-                unit="cP",
+                unit="Pa·s",
                 optimize_higher=False
             )
         }
@@ -341,12 +341,12 @@ def display_property_inputs():
         h_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="h_importance")
     
     # Viscosity
-    st.subheader("Viscosity (cP)")
+    st.subheader("Viscosity (Pa·s)")
     v_col1, v_col2, v_col3 = st.columns(3)
     with v_col1:
-        v_min = st.number_input("Min", value=0.1, step=0.1, key="v_min")
+        v_min = st.number_input("Min", value=0.0005, step=0.0001, key="v_min")
     with v_col2:
-        v_max = st.number_input("Max", value=50000.0, step=100.0, key="v_max")
+        v_max = st.number_input("Max", value=1000.0, step=1.0, key="v_max")
     with v_col3:
         v_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="v_importance")
     
@@ -416,7 +416,7 @@ def display_property_inputs():
                     st.write(f"Toxicity (IC50): {solution['toxicity']:.1f} mM")
                     st.write(f"Solubility: {solution['solubility']:.1f} g/L")
                     st.write(f"Hydrophobicity: {solution['hydrophobicity']:.1f} logP")
-                    st.write(f"Viscosity: {solution['viscosity']:.1f} cP")
+                    st.write(f"Viscosity: {solution['viscosity']:.4f} Pa·s")
                     if solution['in_ilthermo']:
                         st.write("✓ Found in ILThermo database")
 

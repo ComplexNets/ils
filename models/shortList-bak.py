@@ -1,7 +1,9 @@
 fragments = [
     # Cations (Common cation bases in research and industry)
     {'name': 'Imidazolium', 'smiles': '[n+]1cc[nH]c1', 'fragment_type': 'cation'},  # Imidazolium cation with explicit charge
+    {'name': 'Pyridinium', 'smiles': '[n+]1ccccc1', 'fragment_type': 'cation'},  # Pyridinium cation with explicit charge
     {'name': 'Ammonium', 'smiles': '[NH4+]', 'fragment_type': 'cation'},  # Ammonium cation
+    {'name': 'Phosphonium', 'smiles': '[PH4+]', 'fragment_type': 'cation'},  # Phosphonium cation
     
     # Anions (Common anions in research and industry)
     {'name': 'Tetrafluoroborate', 'smiles': 'F[B-](F)(F)F', 'fragment_type': 'anion'},  # [BF4]
