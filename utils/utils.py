@@ -57,7 +57,7 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
     Following proper naming conventions:
     - Imidazolium: 1-alkyl-3-methylimidazolium (or 1,3-dialkylimidazolium for identical substituents)
     - Pyridinium: N-alkylpyridinium or 1-alkylpyridinium
-    - Ammonium: N,N,N-trimethyl-N-alkylammonium (not alkyltrimethylammonium)
+    - Ammonium: alkyltrimethylammonium (or tetramethylammonium for methyl)
     - Pyrrolidinium: N-alkyl-N-methylpyrrolidinium
     - Piperidinium: N-alkyl-N-methylpiperidinium
     - Functional groups should specify position: 1-(2-hydroxyethyl)-3-methylimidazolium
@@ -78,8 +78,11 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
             # Both N- and 1- prefixes are acceptable for pyridinium
             formatted_cation = f"1-{alkyl_name}pyridinium"
         elif "ammonium" in cation_name:
-            # Proper IUPAC naming for quaternary ammonium
-            formatted_cation = f"N,N,N-trimethyl-N-{alkyl_name}ammonium"
+            # Updated naming convention for quaternary ammonium used in IL literature
+            if alkyl_name == "methyl":
+                formatted_cation = "tetramethylammonium"
+            else:
+                formatted_cation = f"{alkyl_name}trimethylammonium"
         elif "phosphonium" in cation_name:
             # Proper naming for phosphonium
             formatted_cation = f"tetra{alkyl_name}phosphonium"
@@ -111,7 +114,7 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
                 elif "pyridinium" in cation_name:
                     formatted_cation = f"1-(2-hydroxy{alkyl_name})pyridinium"
                 elif "ammonium" in cation_name:
-                    formatted_cation = f"N,N,N-trimethyl-N-(2-hydroxy{alkyl_name})ammonium"
+                    formatted_cation = f"(2-hydroxy{alkyl_name})trimethylammonium"
                 elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
                     formatted_cation = f"N-(2-hydroxy{alkyl_name})-N-methylpyrrolidinium"
                 else:
@@ -129,7 +132,7 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
                 elif "pyridinium" in cation_name:
                     formatted_cation = f"1-(3-amino{alkyl_name})pyridinium"
                 elif "ammonium" in cation_name:
-                    formatted_cation = f"N,N,N-trimethyl-N-(3-amino{alkyl_name})ammonium"
+                    formatted_cation = f"(3-amino{alkyl_name})trimethylammonium"
                 elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
                     formatted_cation = f"N-(3-amino{alkyl_name})-N-methylpyrrolidinium"
                 else:
