@@ -16,7 +16,10 @@ from models.shortList_frag import fragments as short_fragments
 from models.mediumList_frag import fragments as medium_fragments
 from models.longList_frag import fragments as long_fragments
 
-__all__ = ['standardize_il_name', 'generate_il_name', 'get_molecular_weight', 'get_fragment_properties', 'is_in_il_thermo']
+# Cache for fragment data DataFrame
+_fragment_data_cache = None
+
+__all__ = ['standardize_il_name', 'generate_il_name', 'get_molecular_weight', 'get_fragment_properties', 'is_in_il_thermo', 'clear_fragment_cache']
 
 def standardize_il_name(name: str) -> str:
     """Standardize ionic liquid name to match IL Thermo format with lowercase conventions"""
@@ -207,7 +210,13 @@ def get_molecular_weight(fragment_name: str, fragment_type: str) -> float:
         return 0.0
 
 def load_fragment_data_from_csv() -> pd.DataFrame:
-    """Load fragment data from local CSV file"""
+    """Load fragment data from local CSV file with caching"""
+    global _fragment_data_cache
+    
+    # Return cached data if available
+    if _fragment_data_cache is not None:
+        return _fragment_data_cache
+        
     try:
         csv_path = os.path.join(project_root, 'fragment_data', 'autono17_ilselect_db.csv')
         print(f"\nLooking for fragment data at: {csv_path}")
@@ -229,6 +238,9 @@ def load_fragment_data_from_csv() -> pd.DataFrame:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
             else:
                 print(f"WARNING: Expected column {col} not found in fragment data")
+        
+        # Store in cache
+        _fragment_data_cache = df
                 
         return df
     except Exception as e:
@@ -237,7 +249,10 @@ def load_fragment_data_from_csv() -> pd.DataFrame:
 
 def get_fragment_properties(fragment_name: str, fragment_type: str) -> Optional[Dict]:
     """
-    Get fragment properties from CSV file or calculate them using RDKit
+    Get fragment properties from cached CSV file or calculate them using RDKit
+    
+    Uses a cached version of the CSV data for improved performance. The cache is
+    loaded only once during program execution, significantly reducing disk I/O.
     """
     try:
         print(f"\nGetting properties for {fragment_type} {fragment_name}")
@@ -308,6 +323,12 @@ def get_fragment_properties(fragment_name: str, fragment_type: str) -> Optional[
     except Exception as e:
         print(f"Error getting fragment properties: {str(e)}")
         return None
+
+def clear_fragment_cache():
+    """Clear the fragment data cache to force reloading from CSV file"""
+    global _fragment_data_cache
+    _fragment_data_cache = None
+    print("Fragment data cache cleared")
 
 def is_in_il_thermo(il_name):
     """Check if ionic liquid exists in IL Thermo database."""

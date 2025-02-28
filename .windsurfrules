@@ -1,0 +1,4 @@
+Limit automated actions and flow actions by asking for permission before taking actions.
+Add and remove code as necessary, while keeping in mind the dependance of and from other functions.
+Only perform those functions that are you are asked to perform.
+Provide feedback on improvements without actually changing code
