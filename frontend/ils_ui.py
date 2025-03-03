@@ -29,12 +29,12 @@ import io
 # Initialize session state
 if 'property_ranges' not in st.session_state:
     prop_ranges = PropertyRanges()
-    prop_ranges.update_property('heat_capacity', (100.0, 1200.0), 0.5, True)
-    prop_ranges.update_property('density', (200.0, 2500.0), 0.5, False)
+    prop_ranges.update_property('heat_capacity', (100.0, 2200.0), 0.5, True)
+    prop_ranges.update_property('density', (100.0, 4000.0), 0.5, False)
     prop_ranges.update_property('toxicity', (0.01, 200.0), 0.5, True)
-    prop_ranges.update_property('solubility', (0.001, 5000.0), 0.5, True)
-    prop_ranges.update_property('hydrophobicity', (-10.0, 15.0), 0.5, True)
-    prop_ranges.update_property('viscosity', (0.0005, 1000.0), 0.5, False)
+    prop_ranges.update_property('solubility', (0.001, 4000.0), 0.5, True)
+    prop_ranges.update_property('hydrophobicity', (-20.0, 20.0), 0.5, True)
+    prop_ranges.update_property('viscosity', (0.0005, 2000.0), 0.5, False)
     st.session_state.property_ranges = prop_ranges
 else:
     prop_ranges = st.session_state.property_ranges
@@ -300,14 +300,14 @@ def get_user_ranges():
     with density_col1:
         density_min = st.number_input(
             "Min",
-            value=200.0,
+            value=100.0,
             step=10.0,
             key="density_min"
         )
     with density_col2:
         density_max = st.number_input(
             "Max",
-            value=2500.0,
+            value=4000.0,
             step=10.0,
             key="density_max"
         )
@@ -342,7 +342,7 @@ def get_user_ranges():
     with cp_col2:
         cp_max = st.number_input(
             "Max",
-            value=1200.0,
+            value=2200.0,
             step=10.0,
             key="cp_max"
         )
@@ -414,7 +414,7 @@ def get_user_ranges():
     with solubility_col2:
         solubility_max = st.number_input(
             "Max",
-            value=5000.0,
+            value=4000.0,
             step=1.0,
             format="%.1f",
             key="solubility_max"
@@ -443,7 +443,7 @@ def get_user_ranges():
     with hydrophobicity_col1:
         hydrophobicity_min = st.number_input(
             "Min",
-            value=-10.0,
+            value=-20.0,
             step=0.1,
             format="%.1f",
             key="hydrophobicity_min"
@@ -451,7 +451,7 @@ def get_user_ranges():
     with hydrophobicity_col2:
         hydrophobicity_max = st.number_input(
             "Max",
-            value=15.0,
+            value=20.0,
             step=0.1,
             format="%.1f",
             key="hydrophobicity_max"
@@ -488,7 +488,7 @@ def get_user_ranges():
     with viscosity_col2:
         viscosity_max = st.number_input(
             "Max",
-            value=1000.0,
+            value=2000.0,
             step=1.0,
             format="%.1f",
             key="viscosity_max"
@@ -844,10 +844,9 @@ st.markdown(
 )
 
 # Title and description
-st.title("Ionic Liquid Property Optimizer")
+st.title("IL-SCOPE")
 st.markdown("""
-This tool helps design ionic liquids by combining molecular fragments and optimizing for desired properties.
-Choose your fragment list and set property ranges in the sidebar to begin.
+The IL Screening, Computational Optimization, and Property Estimation tool helps design ionic liquids by combining molecular fragments and optimizing for desired properties. Choose your fragment list and set property ranges in the sidebar to begin.
 """)
 
 # Get fragment list choice (before property ranges)

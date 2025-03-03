@@ -37,3 +37,4 @@ ENV/
 
 # Checkpoints directory (our manual backups)
 checkpoints/
+.windsurfrules

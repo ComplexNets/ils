@@ -18,7 +18,7 @@ class ValidationCriteria:
     max_groups_per_type: int = 6   # Default max groups of a specific type allowed
     max_chain_length: int = 12     # Default max chain length
     min_chain_length: int = 1      # Default min chain length
-    group_occurrence_upper: int = 3  # t1: Upper limit on group occurrences (Eq. 19)
+    group_occurrence_upper: int = 6  # t1: Upper limit on group occurrences (Eq. 19)
     group_occurrence_lower: int = 0  # t2: Lower limit on group occurrences (Eq. 20)
     group_occurrence_exact: int = -1  # t3: Exact occurrence requirement, -1 means not enforced (Eq. 21)
 
@@ -26,13 +26,13 @@ class PropertyRanges:
     def __init__(self):
         self.properties = {
             'heat_capacity': PropertyCriteria(
-                range=(100.0, 1200.0),  # Expanded range
+                range=(100.0, 2200.0),  # Expanded range
                 importance=0.5,
                 unit="J/mol·K",
                 optimize_higher=True  # Higher heat capacity is generally better
             ),
             'density': PropertyCriteria(
-                range=(200.0, 2500.0),  # Expanded range for lower and higher density ILs
+                range=(100.0, 4000.0),  # Expanded range for lower and higher density ILs
                 importance=0.5,
                 unit="kg/m³",
                 optimize_higher=False  # Lower density might be preferred for some applications
@@ -44,19 +44,19 @@ class PropertyRanges:
                 optimize_higher=True  # Higher IC50 means less toxic
             ),
             'solubility': PropertyCriteria(
-                range=(0.001, 5000.0),  # Expanded for near-zero and highly soluble ILs
+                range=(0.001, 4000.0),  # Expanded for near-zero and highly soluble ILs
                 importance=0.5,
                 unit="g/L",
                 optimize_higher=True  # Higher solubility is generally better
             ),
             'hydrophobicity': PropertyCriteria(
-                range=(-10.0, 15.0),  # Expanded for extremely hydrophilic and super hydrophobic ILs
+                range=(-20.0, 20.0),  # Expanded for extremely hydrophilic and super hydrophobic ILs
                 importance=0.5,
                 unit="logP",
                 optimize_higher=True
             ),
             'viscosity': PropertyCriteria(
-                range=(0.0005, 1000.0),  # Range in Pa·s for typical ionic liquids
+                range=(0.0005, 2000.0),  # Range in Pa·s for typical ionic liquids
                 importance=0.5,
                 unit="Pa·s",
                 optimize_higher=False
@@ -296,7 +296,7 @@ def display_property_inputs():
     with hc_col1:
         hc_min = st.number_input("Min", value=100.0, step=10.0, key="hc_min")
     with hc_col2:
-        hc_max = st.number_input("Max", value=1200.0, step=10.0, key="hc_max")
+        hc_max = st.number_input("Max", value=2200.0, step=10.0, key="hc_max")
     with hc_col3:
         hc_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="hc_importance")
     
@@ -304,9 +304,9 @@ def display_property_inputs():
     st.subheader("Density (kg/m³)")
     d_col1, d_col2, d_col3 = st.columns(3)
     with d_col1:
-        d_min = st.number_input("Min", value=200.0, step=50.0, key="d_min")
+        d_min = st.number_input("Min", value=100.0, step=50.0, key="d_min")
     with d_col2:
-        d_max = st.number_input("Max", value=2500.0, step=50.0, key="d_max")
+        d_max = st.number_input("Max", value=4000.0, step=50.0, key="d_max")
     with d_col3:
         d_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="d_importance")
     
@@ -326,7 +326,7 @@ def display_property_inputs():
     with s_col1:
         s_min = st.number_input("Min", value=0.001, step=0.001, key="s_min")
     with s_col2:
-        s_max = st.number_input("Max", value=5000.0, step=1.0, key="s_max")
+        s_max = st.number_input("Max", value=4000.0, step=1.0, key="s_max")
     with s_col3:
         s_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="s_importance")
     
@@ -334,9 +334,9 @@ def display_property_inputs():
     st.subheader("Hydrophobicity (logP)")
     h_col1, h_col2, h_col3 = st.columns(3)
     with h_col1:
-        h_min = st.number_input("Min", value=-10.0, step=0.1, key="h_min")
+        h_min = st.number_input("Min", value=-20.0, step=0.1, key="h_min")
     with h_col2:
-        h_max = st.number_input("Max", value=15.0, step=0.1, key="h_max")
+        h_max = st.number_input("Max", value=20.0, step=0.1, key="h_max")
     with h_col3:
         h_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="h_importance")
     
@@ -346,7 +346,7 @@ def display_property_inputs():
     with v_col1:
         v_min = st.number_input("Min", value=0.0005, step=0.0001, key="v_min")
     with v_col2:
-        v_max = st.number_input("Max", value=1000.0, step=1.0, key="v_max")
+        v_max = st.number_input("Max", value=2000.0, step=1.0, key="v_max")
     with v_col3:
         v_importance = st.slider("Importance", min_value=0.0, max_value=1.0, value=0.5, step=0.1, key="v_importance")
     

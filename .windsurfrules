@@ -1,4 +1,8 @@
 Limit automated actions and flow actions by asking for permission before taking actions.
 Add and remove code as necessary, while keeping in mind the dependance of and from other functions.
 Only perform those functions that are you are asked to perform.
-Provide feedback on improvements without actually changing code
+If further may be required, provide feedback on improvements without actually changing code
+The user will check results and provide feedback.
+The user will verify the results and provide feedback.
+Verification scripts are not required unless the user asks for them.
+When using the view_file tool, always read the maximum 200 lines per call whenever possible to minimize the number of tool calls and reduce costs. Only make additional calls when necessary to understand the complete context.
