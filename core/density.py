@@ -339,8 +339,12 @@ def screen_fragments_by_density(fragments_data: Dict[str, List[Dict]], target_ra
             # Calculate density
             density = calculate_density(**test_combo)
             
-            # Check if density is within range
-            if density is not None and min_density <= density <= max_density:
+            # Apply a margin (e.g., 40%) to the target range for coarse screening
+            screening_min = min_density * 0.60 # Allow 40% below min target
+            screening_max = max_density * 1.40 # Allow 40% above max target
+
+            # Check if the density of the test combination is within the broadened range
+            if density is not None and screening_min <= density <= screening_max:
                 screened_fragments[frag_type].append(fragment)
     
     return screened_fragments

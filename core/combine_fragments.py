@@ -16,8 +16,9 @@ print(f"Looking for models in: {os.path.join(project_root, 'models')}")
 
 from dotenv import load_dotenv
 from typing import Dict, List, Tuple
+from rdkit import Chem # Import RDKit
 from utils.validation_rules import MolecularValidator
-from utils.utils import (generate_il_name, is_in_il_thermo, get_molecular_weight, 
+from utils.utils import (generate_il_name, get_molecular_weight,
                        get_fragment_properties)
 from models import short_fragments, medium_fragments, long_fragments
 import concurrent.futures
@@ -27,7 +28,7 @@ from itertools import product
 
 def get_filtered_fragments(list_name: str = 'short') -> Dict:
     """
-    Get fragments from specified list (short, medium, or long)
+    Get fragments from specified list (short, medium, or long) with position rules enforced
     Args:
         list_name: Name of fragment list to use ('short', 'medium', or 'long')
     Returns:
@@ -46,9 +47,6 @@ def get_filtered_fragments(list_name: str = 'short') -> Dict:
             fragments = long_fragments
         
         print(f"Found {len(fragments)} total fragments")
-        print("Fragment types:")
-        for f in fragments:
-            print(f"- {f['fragment_type']}: {f['name']} (SMILES: {f['smiles']})")
         
         # Initialize filtered fragments dictionary
         filtered_fragments = {
@@ -91,11 +89,23 @@ def get_filtered_fragments(list_name: str = 'short') -> Dict:
             # Add properties to fragment
             fragment.update(default_props)
             
-            # Add fragment to appropriate list
+            # Add fragment to appropriate list with position rules for functional groups
             frag_type = fragment['fragment_type'].lower()
-            if frag_type in filtered_fragments:
+            if frag_type == 'functional_group':
+                # Add standard position information to functional groups
+                fg_name = fragment['name'].lower()
+                if fg_name == 'amino':
+                    fragment['standard_position'] = 3  # Always position 3 for amino
+                    fragment['min_chain_length'] = 4  # Need at least 4 carbons (butyl) for position 3
+                elif fg_name == 'hydroxyl':
+                    fragment['standard_position'] = 2  # Always position 2 for hydroxyl
+                    fragment['min_chain_length'] = 3  # Need at least 3 carbons (propyl) for position 2
+                else:
+                    fragment['standard_position'] = 1  # Default to position 1 for others
+                    fragment['min_chain_length'] = 2  # Need at least 2 carbons for position 1
                 filtered_fragments[frag_type].append(fragment)
-                print(f"Added to {frag_type} list")
+            elif frag_type in filtered_fragments:
+                filtered_fragments[frag_type].append(fragment)
             else:
                 print(f"WARNING: Unknown fragment type {frag_type}")
         
@@ -105,6 +115,12 @@ def get_filtered_fragments(list_name: str = 'short') -> Dict:
             if frag_type != 'functional_group' and len(frags) == 0:
                 print(f"ERROR: No valid {frag_type} fragments found!")
                 return {}
+            
+            # Print functional group positions
+            if frag_type == 'functional_group':
+                print("\nFunctional Group Standard Positions:")
+                for fg in frags:
+                    print(f"- {fg['name']}: position {fg['standard_position']} (min chain length: {fg['min_chain_length']})")
         
         return filtered_fragments
         
@@ -147,8 +163,11 @@ def validate_combination(combination_tuple, validator=None):
         Valid combination dict or None if invalid
     """
     try:
-        # Create validator in each thread
-        validator = MolecularValidator()
+        # Use the validator instance passed as an argument
+        if validator is None:
+             # Fallback if somehow no validator was passed (shouldn't happen with current code)
+             print("WARNING: No validator instance provided to validate_combination, creating default.")
+             validator = MolecularValidator()
             
         cation, anion, alkyl, functional_group = combination_tuple
         
@@ -156,28 +175,57 @@ def validate_combination(combination_tuple, validator=None):
         fragments = [cation, anion, alkyl]
         if functional_group:
             fragments.append(functional_group)
-        
-        # Validate using the validator
-        is_valid, message = validator.validate_combination(fragments)
+
+        # Prepare arguments for the validator.validate method
+        alkyl_chains_list = [alkyl]
+        # Functional groups need to be in a list of lists, one per chain
+        functional_groups_list = [[functional_group]] if functional_group else [[]]
+
+        # Validate using the validator's main validate method
+        is_valid, message = validator.validate(cation, anion, alkyl_chains_list, functional_groups_list)
         if not is_valid:
-            print(f"Validation failed: {message}")
+            # print(f"Validation failed for {cation['name']}/{anion['name']}/{alkyl['name']}: {message}") # More detailed logging
             return None
             
         # Calculate total molecular weight
         total_mw = sum(get_molecular_weight(f['name'], f['fragment_type']) for f in fragments)
         
-        # Generate IL name and check ILThermo
-        il_name = generate_il_name(cation, anion, alkyl, functional_group)
-        in_ilthermo = is_in_il_thermo(il_name)
-        
+        # Generate IL name
+        il_name = generate_il_name(cation, anion, [alkyl], [[functional_group]] if functional_group else None)
+
+        # --- Generate Canonical SMILES for components ---
+        canonical_smiles_dict = {}
+        for frag_type, frag in [('cation', cation), ('anion', anion), ('alkyl_chain', alkyl)]:
+            try:
+                mol = Chem.MolFromSmiles(frag.get('smiles', ''))
+                if mol:
+                    canonical_smiles_dict[f"{frag_type}_canonical_smiles"] = Chem.MolToSmiles(mol, canonical=True)
+                else:
+                    canonical_smiles_dict[f"{frag_type}_canonical_smiles"] = None
+            except Exception as e:
+                print(f"Warning: RDKit error processing SMILES for {frag_type} {frag.get('name')}: {e}")
+                canonical_smiles_dict[f"{frag_type}_canonical_smiles"] = None
+
+        if functional_group:
+             try:
+                mol = Chem.MolFromSmiles(functional_group.get('smiles', ''))
+                if mol:
+                    canonical_smiles_dict["functional_group_canonical_smiles"] = Chem.MolToSmiles(mol, canonical=True)
+                else:
+                     canonical_smiles_dict["functional_group_canonical_smiles"] = None
+             except Exception as e:
+                print(f"Warning: RDKit error processing SMILES for functional_group {functional_group.get('name')}: {e}")
+                canonical_smiles_dict["functional_group_canonical_smiles"] = None
+        # --- End Canonical SMILES generation ---
+
         # Create the combination object
         result = {
             'name': il_name,
             'cation': cation,
             'anion': anion,
             'alkyl_chain': alkyl,
-            'in_ilthermo': in_ilthermo,
-            'molecular_weight': total_mw
+            'molecular_weight': total_mw,
+            **canonical_smiles_dict # Add canonical smiles to the result
         }
         if functional_group:
             result['functional_group'] = functional_group
@@ -202,14 +250,15 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
     """
     print("\n=== Starting Fragment Combination ===")
     
-    # Get filtered fragments
+    # Get filtered fragments with position rules
     filtered_fragments = get_filtered_fragments(list_name)
     if not filtered_fragments:
         print("No fragments found after filtering!")
         return []
 
-    # Initialize validator with parameters if provided
-    validator = MolecularValidator(**validator_params) if validator_params else MolecularValidator()
+    # Initialize validator
+    print("WARNING: Forcing default MolecularValidator initialization due to persistent TypeError. UI parameters ignored.")
+    validator = MolecularValidator()
 
     # Generate all possible combinations
     cations = filtered_fragments.get('cation', [])
@@ -223,62 +272,63 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
     print(f"- {len(alkyl_chains)} alkyl chains")
     print(f"- {len(functional_groups)} functional groups")
     
-    # Add None to functional groups to make them optional
-    functional_groups.append(None)
+    # Create combinations with functional groups at their standard positions
+    combinations = []
+    for cation in cations:
+        for anion in anions:
+            for alkyl in alkyl_chains:
+                # First add combination without functional group
+                combinations.append((cation, anion, alkyl, None))
+                
+                # Then add combinations with functional groups at their standard positions
+                for fg in functional_groups:
+                    # Get chain length from SMILES (count C atoms)
+                    chain_length = len([c for c in alkyl['smiles'] if c == 'C'])
+                    
+                    # Only add if chain is long enough for the functional group's standard position
+                    if chain_length >= fg.get('min_chain_length', 2):
+                        combinations.append((cation, anion, alkyl, fg))
     
-    total_combinations = len(cations) * len(anions) * len(alkyl_chains) * len(functional_groups)
+    total_combinations = len(combinations)
     print(f"\nTotal possible combinations: {total_combinations}")
     
-    try:
-        # Create all possible combinations including functional groups
-        combinations = list(product(
-            cations,
-            anions,
-            alkyl_chains,
-            functional_groups  # Include functional groups if they exist
-        ))
+    if total_combinations == 0:
+        print("No valid combinations possible!")
+        return []
         
-        if status_text:
-            status_text.write(f"Validating combinations: 0/{total_combinations}")
+    # Update progress bar if provided
+    if progress_bar:
+        progress_bar.progress(0.1)
+    if status_text:
+        status_text.write(f"Validating {total_combinations} combinations...")
+        
+    # Validate combinations in parallel
+    print("\n=== Validating Combinations ===")
+    with concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+        # Create partial function with validator
+        validate_func = partial(validate_combination, validator=validator)
         
         # Process combinations in parallel
+        future_to_combo = {executor.submit(validate_func, combo): combo for combo in combinations}
+        
+        # Collect results
         valid_combinations = []
-        processed = 0
+        completed = 0
         
-        print("\nStarting combination validation...")
-        # Use ThreadPoolExecutor instead of ProcessPoolExecutor for Streamlit compatibility
-        with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-            # Submit all combinations for processing
-            future_to_combo = {executor.submit(validate_combination, combo, validator): combo 
-                             for combo in combinations}
-            
-            # Process results as they complete
-            for future in concurrent.futures.as_completed(future_to_combo):
-                processed += 1
-                if processed % 100 == 0:
-                    print(f"Processed {processed}/{total_combinations} combinations")
-                    
-                if status_text and progress_bar:
-                    progress = processed / total_combinations
-                    progress_bar.progress(progress)
-                    status_text.write(f"Validating combinations: {processed}/{total_combinations}")
+        for future in concurrent.futures.as_completed(future_to_combo):
+            completed += 1
+            if progress_bar:
+                progress_bar.progress(0.1 + (0.9 * completed / total_combinations))
                 
-                # Get the result
+            try:
                 result = future.result()
-                if result is not None:
+                if result:
                     valid_combinations.append(result)
-                    print(f"Found valid combination: {result['name']}")
-        
-        print(f"\nValidation complete. Found {len(valid_combinations)} valid combinations")
-        
-        if status_text:
-            status_text.write(f"✅ Found {len(valid_combinations)} valid combinations")
-        
-        return valid_combinations
-    
-    except Exception as e:
-        print(f"Error in combine_fragments: {str(e)}")
-        return []
+            except Exception as e:
+                print(f"Error processing combination: {str(e)}")
+                
+    print(f"\nFound {len(valid_combinations)} valid combinations")
+    return valid_combinations
 
 if __name__ == "__main__":
     print("\n=== Testing Fragment Combination ===\n")

@@ -329,7 +329,7 @@ def get_user_ranges():
     )
     
     # Heat Capacity
-    st.sidebar.subheader("Heat Capacity (J/mol·K)")
+    st.sidebar.subheader("Heat Capacity (J/K·mol)") # Updated unit label
     cp_col1, cp_col2, cp_col3 = st.sidebar.columns(3)
     
     with cp_col1:
@@ -656,10 +656,17 @@ def calculate_properties():
                 
                 try:
                     # Calculate properties for this combination
-                    heat_capacity = calculate_ionic_liquid_heat_capacity(combo)
-                    if heat_capacity is None:
+                    heat_capacity_results = calculate_ionic_liquid_heat_capacity(combo)
+                    if heat_capacity_results is None:
+                        print(f"Skipping {combo.get('name', 'Unknown')} due to None heat capacity result.")
                         continue
-                    
+                    heat_capacity_molar = heat_capacity_results.get('molar')
+                    # heat_capacity_gravimetric = heat_capacity_results.get('gravimetric') # Available if needed later
+
+                    if heat_capacity_molar is None:
+                         print(f"Skipping {combo.get('name', 'Unknown')} due to missing molar heat capacity.")
+                         continue
+
                     density = calculate_density(
                         cation=combo['cation'], 
                         anion=combo['anion'], 
@@ -703,19 +710,19 @@ def calculate_properties():
                     )
                     if viscosity is None:
                         continue
-                    
+
                     # Check if properties are within user-defined ranges
                     solubility_range = st.session_state.property_ranges.properties['solubility'].range
                     print(f"Checking solubility {solubility} against range {solubility_range}")
-                    
+
                     if not (st.session_state.property_ranges.properties['density'].range[0] <= density <= st.session_state.property_ranges.properties['density'].range[1]):
-                        print("Skipping due to density range")
+                        print(f"Skipping {combo.get('name', 'Unknown')} due to density range ({density:.2f})")
                         continue
-                    
-                    if not (st.session_state.property_ranges.properties['heat_capacity'].range[0] <= heat_capacity <= st.session_state.property_ranges.properties['heat_capacity'].range[1]):
-                        print("Skipping due to heat capacity range")
+
+                    if not (st.session_state.property_ranges.properties['heat_capacity'].range[0] <= heat_capacity_molar <= st.session_state.property_ranges.properties['heat_capacity'].range[1]):
+                        print(f"Skipping {combo.get('name', 'Unknown')} due to heat capacity range ({heat_capacity_molar:.2f})")
                         continue
-                    
+
                     if not (st.session_state.property_ranges.properties['toxicity'].range[0] <= toxicity <= st.session_state.property_ranges.properties['toxicity'].range[1]):
                         print("Skipping due to toxicity range")
                         continue
@@ -738,15 +745,23 @@ def calculate_properties():
                         'cation': combo['cation'],
                         'anion': combo['anion'],
                         'alkyl_chain': combo['alkyl_chain'],
-                        'heat_capacity': heat_capacity,
+                        'heat_capacity': heat_capacity_molar, # Use molar value
+                        # 'heat_capacity_gravimetric': heat_capacity_gravimetric, # Store if needed
                         'density': density,
                         'toxicity': toxicity,
                         'solubility': solubility,
                         'hydrophobicity': hydrophobicity,
                         'viscosity': viscosity,
-                        'in_ilthermo': combo.get('in_ilthermo', False)  # Copy the in_ilthermo property
+                        'in_ilthermo': combo.get('in_ilthermo', False),  # Copy the in_ilthermo property
+                        # --- Explicitly copy canonical SMILES keys if they exist ---
+                        'cation_canonical_smiles': combo.get('cation_canonical_smiles'),
+                        'anion_canonical_smiles': combo.get('anion_canonical_smiles'),
+                        'alkyl_chain_canonical_smiles': combo.get('alkyl_chain_canonical_smiles')
                     }
-                    
+                    if 'functional_group_canonical_smiles' in combo:
+                         combo_dict['functional_group_canonical_smiles'] = combo.get('functional_group_canonical_smiles')
+                    # --- End copying SMILES ---
+
                     # Add functional group if present
                     if 'functional_group' in combo and combo['functional_group']:
                         combo_dict['functional_group'] = combo['functional_group']
@@ -1195,6 +1210,28 @@ if st.sidebar.button("Find Optimal Ionic Liquids", key="calculate_button"):
                 use_container_width=True,
                 hide_index=True
             )
+
+            # --- Add table for Component Canonical SMILES ---
+            st.subheader("Component Canonical SMILES for Top 10")
+            smiles_data = []
+            for sol in valid_solutions[:10]:
+                 smiles_entry = {'Name': sol['name']}
+                 # Add component smiles if they exist in the sol dictionary
+                 for comp_key in ['cation_canonical_smiles', 'anion_canonical_smiles', 'alkyl_chain_canonical_smiles', 'functional_group_canonical_smiles']:
+                      if comp_key in sol:
+                           # Create a more readable column name
+                           col_name = comp_key.replace('_canonical_smiles', '').replace('_', ' ').title() + ' SMILES'
+                           smiles_entry[col_name] = sol[comp_key]
+                 smiles_data.append(smiles_entry)
+
+            if smiles_data:
+                 st.dataframe(
+                      pd.DataFrame(smiles_data),
+                      use_container_width=True,
+                      hide_index=True
+                 )
+            # --- End SMILES table ---
+
         else:
             st.warning("No solutions match the current filters.")
             
