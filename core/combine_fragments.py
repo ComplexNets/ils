@@ -256,12 +256,9 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
         print("No fragments found after filtering!")
         return []
 
-<<<<<<< HEAD
+
     # Initialize validator. Force default initialization to avoid TypeError due to environment issues.
     # NOTE: This will ignore validator_params from the UI.
-=======
-    # Initialize validator
->>>>>>> 12f1dd46e743685c0b05fb88e34e9f4308753383
     print("WARNING: Forcing default MolecularValidator initialization due to persistent TypeError. UI parameters ignored.")
     validator = MolecularValidator()
 
@@ -277,55 +274,32 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
     print(f"- {len(alkyl_chains)} alkyl chains")
     print(f"- {len(functional_groups)} functional groups")
     
-    # Create combinations with functional groups at their standard positions
-    combinations = []
-    for cation in cations:
-        for anion in anions:
-            for alkyl in alkyl_chains:
-                # First add combination without functional group
-                combinations.append((cation, anion, alkyl, None))
-                
-                # Then add combinations with functional groups at their standard positions
-                for fg in functional_groups:
-                    # Get chain length from SMILES (count C atoms)
-                    chain_length = len([c for c in alkyl['smiles'] if c == 'C'])
-                    
-                    # Only add if chain is long enough for the functional group's standard position
-                    if chain_length >= fg.get('min_chain_length', 2):
-                        combinations.append((cation, anion, alkyl, fg))
+    # Add None to functional groups to make them optional
+    functional_groups.append(None)
     
-    total_combinations = len(combinations)
+    total_combinations = len(cations) * len(anions) * len(alkyl_chains) * len(functional_groups)
     print(f"\nTotal possible combinations: {total_combinations}")
     
-    if total_combinations == 0:
-        print("No valid combinations possible!")
-        return []
+    try:
+        # Create all possible combinations including functional groups
+        combinations = list(product(
+            cations,
+            anions,
+            alkyl_chains,
+            functional_groups  # Include functional groups if they exist
+        ))
         
-    # Update progress bar if provided
-    if progress_bar:
-        progress_bar.progress(0.1)
-    if status_text:
-        status_text.write(f"Validating {total_combinations} combinations...")
-        
-    # Validate combinations in parallel
-    print("\n=== Validating Combinations ===")
-    with concurrent.futures.ProcessPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-        # Create partial function with validator
-        validate_func = partial(validate_combination, validator=validator)
+        if status_text:
+            status_text.write(f"Validating combinations: 0/{total_combinations}")
         
         # Process combinations in parallel
-        future_to_combo = {executor.submit(validate_func, combo): combo for combo in combinations}
-        
-        # Collect results
         valid_combinations = []
-        completed = 0
+        processed = 0
         
-<<<<<<< HEAD
         print("\nStarting combination validation...")
         # Use ThreadPoolExecutor instead of ProcessPoolExecutor for Streamlit compatibility
         with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
             # Submit all combinations for processing, ensuring the correctly initialized validator is passed
-            # The 'validator' variable here holds the instance created with validation_criteria=validator_params
             future_to_combo = {executor.submit(validate_combination, combo, validator): combo
                              for combo in combinations}
 
@@ -339,22 +313,23 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
                     progress = processed / total_combinations
                     progress_bar.progress(progress)
                     status_text.write(f"Validating combinations: {processed}/{total_combinations}")
-=======
-        for future in concurrent.futures.as_completed(future_to_combo):
-            completed += 1
-            if progress_bar:
-                progress_bar.progress(0.1 + (0.9 * completed / total_combinations))
->>>>>>> 12f1dd46e743685c0b05fb88e34e9f4308753383
                 
-            try:
+                # Get the result
                 result = future.result()
-                if result:
+                if result is not None:
                     valid_combinations.append(result)
-            except Exception as e:
-                print(f"Error processing combination: {str(e)}")
-                
-    print(f"\nFound {len(valid_combinations)} valid combinations")
-    return valid_combinations
+                    print(f"Found valid combination: {result['name']}")
+        
+        print(f"\nValidation complete. Found {len(valid_combinations)} valid combinations")
+        
+        if status_text:
+            status_text.write(f"✅ Found {len(valid_combinations)} valid combinations")
+        
+        return valid_combinations
+    
+    except Exception as e:
+        print(f"Error in combine_fragments: {str(e)}")
+        return []
 
 if __name__ == "__main__":
     print("\n=== Testing Fragment Combination ===\n")
