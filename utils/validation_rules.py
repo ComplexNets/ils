@@ -1,4 +1,4 @@
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List
 import numpy as np
 from itertools import product
 import os
@@ -11,405 +11,489 @@ MAX_BOND_CAPACITY = 4  # Maximum total bond capacity
 class MolecularValidator:
     """Validates ionic liquid combinations based on chemical rules"""
     
-    def __init__(self, max_total_groups=6, min_total_groups=0, 
-                 max_groups_per_type=6, min_groups_per_type=0,
-                 max_alkyl_chain_length=12, max_alkyl_chains=4,
-                 max_valence=4, min_valence=-4,
-                 max_groups_per_chain=2, min_groups_per_chain=0,
-                 max_group_occurrences=1, min_group_occurrences=0,
-                 max_total_group_occurrences=2, min_total_group_occurrences=0):
-        """Initialize validator with configurable parameters."""
-        self.max_total_groups = max_total_groups
-        self.min_total_groups = min_total_groups
-        self.max_groups_per_type = max_groups_per_type
-        self.min_groups_per_type = min_groups_per_type
-        self.max_valence = max_valence
-        self.min_valence = min_valence
-        self.max_alkyl_chain_length = max_alkyl_chain_length
-        self.max_alkyl_chains = max_alkyl_chains
-        self.max_groups_per_chain = max_groups_per_chain
-        self.min_groups_per_chain = min_groups_per_chain
-        self.max_group_occurrences = max_group_occurrences
-        self.min_group_occurrences = min_group_occurrences
-        self.max_total_group_occurrences = max_total_group_occurrences
-        self.min_total_group_occurrences = min_total_group_occurrences
+    def __init__(self, validation_criteria=None):
+        """Initialize validator with optional validation criteria"""
+        self.validation_criteria = validation_criteria
 
-    def _validate_required_types(self, fragments: List[Dict]) -> Tuple[bool, str]:
+# Cation and Anion Base Count
+# Equations 12 and 13
+# Purpose: Ensures a maximum of one cation base and one anion, respectively, for each IL candidate.
+
+    def _get_anion_cation_count(self, fragments: List[Dict], fragment_type: str) -> int:
+        """Get the count of fragments of a specific type"""
+        return sum(1 for fragment in fragments if fragment.get('fragment_type', '').lower() == fragment_type)
+    
+    def _validate_anion_cation_counts(self, fragments: List[Dict]) -> Tuple[bool, str]:
         """
-        Validate that all required fragment types are present
-        Args:
-            fragments: List of fragment dictionaries
+        Validate that there is exactly one cation and one anion
         Returns:
             Tuple[bool, str]: (is_valid, message)
         """
-        try:
-            # Check for required fragment types
-            fragment_types = [f['fragment_type'].lower() for f in fragments if f]
-            
-            # Must have exactly one cation and one anion
-            if fragment_types.count('cation') != 1:
-                return False, "Must have exactly one cation"
-            if fragment_types.count('anion') != 1:
-                return False, "Must have exactly one anion"
-                
-            # Must have at least one alkyl chain
-            if 'alkyl_chain' not in fragment_types:
-                return False, "Must have at least one alkyl chain"
-                
-            # Functional groups are optional
-            return True, "All required fragment types present"
-            
-        except Exception as e:
-            return False, f"Error validating required types: {str(e)}"
+        cation_count = self._get_anion_cation_count(fragments, 'cation')
+        anion_count = self._get_anion_cation_count(fragments, 'anion')
+        
+        if cation_count != 1:
+            return False, f"Invalid number of cations: {cation_count} (must be 1)"
+        if anion_count != 1:
+            return False, f"Invalid number of anions: {anion_count} (must be 1)"
 
-    def validate_combination(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """
-        Validate a combination of fragments against all rules
+        return True, "Valid fragment counts"
+# Alkyl Chain Count
+# Equation 14
+# Purpose: Fixes number of alkyl side chains based on cation valence
+
+    def _get_valence_from_smiles(self, smiles: str) -> List[Dict]:
+        """Get valence information for each atom in a SMILES string.
+        
         Args:
-            fragments: List of fragment dictionaries
+            smiles: SMILES string to analyze
+            
         Returns:
-            Tuple of (is_valid, message)
+            List of dictionaries containing valence info for each atom
         """
         try:
-            if not fragments:
-                print("No fragments provided")
-                return False, "No fragments provided"
-                
-            print(f"\nValidating combination: {[f['name'] for f in fragments]}")
+            mol = Chem.MolFromSmiles(smiles)
+            if not mol:
+                print(f"DEBUG: Failed to parse SMILES: {smiles}")
+                return None
             
-            # First check if we have required types
-            is_valid, message = self._validate_required_types(fragments)
-            if not is_valid:
-                print(f"Failed required types check: {message}")
-                return False, message
+            valences = []
+            for atom in mol.GetAtoms():
+                # Calculate total bonds and max valence
+                total_bonds = sum([bond.GetBondTypeAsDouble() for bond in atom.GetBonds()])
+                max_valence = 4 if atom.GetSymbol() in ["N", "P"] else 3
                 
-            # Then check alkyl chain count
-            is_valid, message = self._alkyl_chain_count(fragments)
-            if not is_valid:
-                print(f"Failed alkyl chain count check: {message}")
-                return False, message
-                
-            # Then check total groups
-            is_valid, message = self._validate_total_groups(fragments)
-            if not is_valid:
-                print(f"Failed total groups check: {message}")
-                return False, message
-                
-            # Then check groups per chain
-            is_valid, message = self._validate_groups_per_chain(fragments)
-            if not is_valid:
-                print(f"Failed groups per chain check: {message}")
-                return False, message
-                
-            # Check group occurrences if we have alkyl chains
-            alkyl_chains = [f for f in fragments if f['fragment_type'].lower() == 'alkyl_chain']
-            for chain in alkyl_chains:
-                is_valid, message = self._validate_group_occurrences(chain)
-                if not is_valid:
-                    print(f"Failed group occurrences check: {message}")
-                    return False, message
-                    
-            # Check cation-wide group occurrences
-            is_valid, message = self._validate_cation_group_occurrences(fragments)
-            if not is_valid:
-                print(f"Failed cation group occurrences check: {message}")
-                return False, message
-                
-            # Finally check modified octet rule
-            is_valid, message = self._validate_modified_octet_rule(fragments)
-            if not is_valid:
-                print(f"Failed modified octet rule check: {message}")
-                return False, message
-                
-            print("Combination passed all validation checks!")
-            return True, "Valid combination"
-            
-        except Exception as e:
-            print(f"Error validating combination: {str(e)}")
-            return False, f"Error validating combination: {str(e)}"
-
-    def validate(self, cation: Dict, anion: Dict, alkyl: Dict) -> Tuple[bool, str]:
-        """
-        Validate a combination of fragments
-        Returns:
-            Tuple[bool, str]: (is_valid, message)
-        """
-        try:
-            # Create fragments list
-            fragments = [cation, anion, alkyl]
-            
-            # First check if we have required types
-            is_valid, message = self._validate_required_types(fragments)
-            if not is_valid:
-                print(f"Failed required types check: {message}")
-                return False, message
-                
-            # Then check alkyl chain count
-            is_valid, message = self._alkyl_chain_count(fragments)
-            if not is_valid:
-                print(f"Failed alkyl chain count check: {message}")
-                return False, message
-                
-            # Then check total groups
-            is_valid, message = self._validate_total_groups(fragments)
-            if not is_valid:
-                print(f"Failed total groups check: {message}")
-                return False, message
-                
-            # Then check groups per chain
-            is_valid, message = self._validate_groups_per_chain(fragments)
-            if not is_valid:
-                print(f"Failed groups per chain check: {message}")
-                return False, message
-                
-            # Check group occurrences if we have alkyl chains
-            alkyl_chains = [f for f in fragments if f['fragment_type'].lower() == 'alkyl_chain']
-            for chain in alkyl_chains:
-                is_valid, message = self._validate_group_occurrences(chain)
-                if not is_valid:
-                    print(f"Failed group occurrences check: {message}")
-                    return False, message
-                    
-            # Check cation-wide group occurrences
-            is_valid, message = self._validate_cation_group_occurrences(fragments)
-            if not is_valid:
-                print(f"Failed cation group occurrences check: {message}")
-                return False, message
-                
-            # Finally check modified octet rule
-            is_valid, message = self._validate_modified_octet_rule(fragments)
-            if not is_valid:
-                print(f"Failed modified octet rule check: {message}")
-                return False, message
-                
-            print("Combination passed all validation checks!")
-            return True, "Valid combination"
-            
-        except Exception as e:
-            print(f"Error validating combination: {str(e)}")
-            return False, f"Error validating combination: {str(e)}"
-
-    def _get_paper_valence(self, fragment_type: str, fragment_name: str) -> Optional[int]:
-        """Get the paper-defined valence for a fragment based on its type and name"""
-        try:
-            # Normalize case for consistent lookup
-            fragment_type = fragment_type.lower().strip()
-            fragment_name = fragment_name.lower().strip()
-            
-            # Cations have specific valences based on type
-            if fragment_type == 'cation':
-                cation_valences = {
-                    'imidazolium': 2,    # Can have 2 side chains
-                    'pyridinium': 1,     # Can have 1 side chain
-                    'pyrrolidinium': 2,  # Can have 2 side chains
-                    'piperidinium': 2,   # Can have 2 side chains
-                    'morpholinium': 2,   # Can have 2 side chains
-                    'ammonium': 4,       # Can have 4 side chains
-                    'phosphonium': 4,    # Can have 4 side chains
-                    # Common variations of the names
-                    'phosphonium cation': 4,
-                    'ammonium cation': 4,
-                    'imidazolium cation': 2,
-                    'pyridinium cation': 1,
-                    'tetramethylammonium': 4,
-                    'methylimidazolium': 2,
-                    'methylpyridinium': 1,
-                    'propylpyridinium': 1,
-                    'hexylpyridinium': 1,
-                    'butyl-methylimidazolium': 2,
-                    'octyl-methylimidazolium': 2
+                valence_info = {
+                    "Atom": atom.GetSymbol(),
+                    "Total Bonds": total_bonds,
+                    "Max Valence": max_valence,
+                    "Formal Charge": atom.GetFormalCharge(),
+                    "Is Aromatic": atom.GetIsAromatic()
                 }
-                
-                # First try exact match
-                valence = cation_valences.get(fragment_name)
-                if valence is not None:
-                    print(f"Found exact valence match for {fragment_name}: {valence}")
-                    return valence
-                    
-                # Try matching base types
-                base_types = ['imidazolium', 'pyridinium', 'ammonium', 'phosphonium']
-                for base in base_types:
-                    if base in fragment_name:
-                        valence = cation_valences[base]
-                        print(f"Matched {fragment_name} to base type {base} with valence {valence}")
-                        return valence
-                
-                print(f"WARNING: Unknown cation type '{fragment_name}', defaulting to valence=1")
-                return 1
-            
-            # Alkyl chains always have valence=1 (one connection point)
-            elif fragment_type == 'alkyl_chain':
-                return 1
-            
-            # Functional groups typically have valence=1 unless specified
-            elif fragment_type == 'functional_group':
-                special_group_valences = {
-                    # Add any special functional groups that have valence != 1
-                }
-                return special_group_valences.get(fragment_name, 1)
-            
-            # Anions don't need valence
-            elif fragment_type == 'anion':
-                return 0
-                
-            print(f"WARNING: Unknown fragment type {fragment_type}")
-            return None
-            
+                print(f"DEBUG: Atom valence info: {valence_info}")
+                valences.append(valence_info)
+            return valences
         except Exception as e:
-            print(f"Error getting paper valence: {str(e)}")
+            print(f"DEBUG: Error processing SMILES {smiles}: {str(e)}")
             return None
 
     def _alkyl_chain_count(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """Validate that the number of substituents (alkyl chains + functional groups) is appropriate for the cation"""
-        try:
-            # Get cation from fragments
-            cation = next((f for f in fragments if f['fragment_type'].lower() == 'cation'), None)
-            if not cation:
-                return False, "No cation found in fragments"
+        """Eq. 14 fixes the number of alkyl side chains attached to the cation based on 
+        the available free valence of the cation base.
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
+        # Find the cation fragment
+        cation = next((f for f in fragments if f['fragment_type'].lower() == 'cation'), None)
+        if not cation:
+            print("DEBUG: No cation found in fragments")
+            return False, "No cation found"
+        
+        print(f"DEBUG: Processing cation: {cation['name']}")
+        
+        # Get cation SMILES and convert to RDKit mol
+        cation_smiles = cation.get('smiles')
+        if not cation_smiles:
+            print("DEBUG: No SMILES found for cation")
+            return False, "No SMILES found for cation"
             
-            print(f"DEBUG: Processing cation: {cation['name']}")
-            print(f"DEBUG: Cation SMILES: {cation['smiles']}")
+        print(f"DEBUG: Cation SMILES: {cation_smiles}")
             
-            # Get cation valence
-            cation_valence = self._get_paper_valence(cation['fragment_type'], cation['name'])
-            if cation_valence is None:
-                return False, f"Could not calculate valence for cation: {cation['name']}"
-                
-            # Count substituents (both alkyl chains and functional groups)
-            alkyl_chains = [f for f in fragments if f['fragment_type'].lower() == 'alkyl_chain']
-            functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']
-            total_substituents = len(alkyl_chains) + len(functional_groups)
+        # Get valence information
+        valences = self._get_valence_from_smiles(cation_smiles)
+        if not valences:
+            print(f"DEBUG: Could not analyze valence for cation: {cation_smiles}")
+            return False, f"Could not analyze valence for cation: {cation_smiles}"
             
-            # Validate total substituents is not more than cation valence
-            if total_substituents > cation_valence:
-                return False, f"Total substituents ({total_substituents}) exceeds cation valence ({cation_valence})"
+        # Calculate available attachment points based on valence and implicit hydrogens
+        mol = Chem.MolFromSmiles(cation_smiles) # Re-parse to get atom objects easily
+        available_points = 0
+        processed_central_atom = False
+        for atom in mol.GetAtoms():
+            atom_symbol = atom.GetSymbol()
+            formal_charge = atom.GetFormalCharge()
+            is_aromatic = atom.GetIsAromatic()
+            implicit_hs = atom.GetNumImplicitHs()
             
-            # Must have at least one alkyl chain
-            if len(alkyl_chains) == 0:
-                return False, "Must have at least one alkyl chain"
-            
-            return True, f"Valid substituent count (alkyl chains: {len(alkyl_chains)}, functional groups: {len(functional_groups)})"
-            
-        except Exception as e:
-            return False, f"Error validating alkyl chain count: {str(e)}"
+            # print(f"DEBUG: Checking Atom {atom.GetIdx()}: Symbol={atom_symbol}, Aromatic={is_aromatic}, Charge={formal_charge}, ImplicitHs={implicit_hs}")
 
-    def _validate_total_groups(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """Validate total number of functional groups"""
+            # For non-aromatic ammonium/phosphonium centers (NH4+ or PH4+)
+            if atom_symbol in ["N", "P"] and formal_charge == 1 and not is_aromatic:
+                # Assume all 4 positions are potentially substitutable if represented like [NH4+] or [PH4+]
+                # A more precise check might look at explicit Hs if the SMILES includes them.
+                available_points = 4 
+                print(f"DEBUG: Found non-aromatic {atom_symbol}+ center. Assuming 4 available points.")
+                processed_central_atom = True
+                break # Found the central atom, primary determinant of chain count
+
+            # For aromatic rings (check C and N atoms with implicit Hs)
+            elif is_aromatic:
+                # Check aromatic carbons with implicit hydrogens
+                if atom_symbol == "C" and implicit_hs > 0:
+                     available_points += implicit_hs # Each implicit H represents a potential attachment point
+                     print(f"DEBUG: Found {implicit_hs} available point(s) on aromatic C (Atom {atom.GetIdx()})")
+                # Check aromatic NH groups (like in imidazolium)
+                elif atom_symbol == "N" and formal_charge == 0 and implicit_hs > 0:
+                     available_points += implicit_hs # The H on the N can be replaced
+                     print(f"DEBUG: Found {implicit_hs} available point(s) on aromatic NH (Atom {atom.GetIdx()})")
+                # Note: Aromatic N+ usually doesn't have implicit Hs for direct substitution
+
+        # If we didn't find a central N+/P+ atom, the sum from ring atoms is the total.
+        print(f"DEBUG: Calculated total available points: {available_points}")
+        
+        # Count alkyl chains in the combination
+        alkyl_chain_count = sum(1 for f in fragments if f['fragment_type'].lower() == 'alkyl_chain')
+        print(f"DEBUG: Alkyl chain count: {alkyl_chain_count}")
+        
+        # Validate that we don't exceed available points
+        if alkyl_chain_count > available_points:
+            print(f"DEBUG: Too many alkyl chains ({alkyl_chain_count}) for available points ({available_points})")
+            return False, f"Too many alkyl chains ({alkyl_chain_count}) for available attachment points ({available_points})"
+        
+        print(f"DEBUG: Valid alkyl chain count")
+        return True, f"Valid number of alkyl chains ({alkyl_chain_count}) for available attachment points ({available_points})"
+   
+    # OCTET RULE
+    # Equation 15, 16
+    # Ensures valence balance in the molecule
+
+
+    # Upper Bound Cation and Alkyl Chain Size
+    # Cation size: The size of the cation is controlled by introducing an upper bound on maximum number of groups nU  G 
+    # that are allowed in the cation (Eq. 17).
+    # Alkyl chain size: The size of the alkyl chain is controlled by introducing an upper bound on maximum number of groups nU  A 
+    # that are allowed in the alkyl chain (Eq. 18).
+
+
+    def _get_max_groups(self):
+        """Get maximum groups allowed per chain"""
+        return self.validation_criteria.max_groups_per_chain if self.validation_criteria else 6
+        
+    def _get_max_groups_per_type(self):
+        """Get maximum groups allowed per type"""
+        return self.validation_criteria.max_groups_per_type if self.validation_criteria else 2
+
+    def _validate_total_groups_per_chain(self, alkyl_chain: Dict, functional_groups: List[Dict]) -> Tuple[bool, str]:
+        """Eq. 17: Validates that total number of functional groups on an alkyl chain doesn't exceed maximum allowed
+        
+        ΣΣyingil ≤ nGl : Sum of all functional groups on chain l must not exceed maximum allowed groups nGl
+        
+        Args:
+            alkyl_chain: The alkyl chain fragment
+            functional_groups: List of functional group fragments to validate
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
         try:
-            # Get functional groups
-            functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']
+            if not self.validation_criteria:
+                return True, "No validation criteria set"
+            
+            # Count total functional groups
             total_groups = len(functional_groups)
+            max_allowed_groups = self._get_max_groups()
             
-            # Validate total groups
-            if total_groups > self.max_total_groups:
-                return False, f"Total functional groups ({total_groups}) exceeds maximum ({self.max_total_groups})"
-            if total_groups < self.min_total_groups:
-                return False, f"Total functional groups ({total_groups}) is less than minimum ({self.min_total_groups})"
+            print(f"DEBUG: Alkyl chain {alkyl_chain['name']} has {total_groups} functional groups (max allowed: {max_allowed_groups})")
             
-            return True, f"Valid total groups ({total_groups})"
+            if total_groups > max_allowed_groups:
+                return False, f"Too many functional groups on alkyl chain {alkyl_chain['name']}: {total_groups} (max: {max_allowed_groups})"
             
-        except Exception as e:
-            return False, f"Error validating total groups: {str(e)}"
-
-    def _validate_groups_per_chain(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """Validate number of functional groups per alkyl chain"""
-        try:
-            # Get max groups per chain from validation criteria or use default
-            max_groups_per_chain = self.max_groups_per_chain
-            min_groups_per_chain = self.min_groups_per_chain
-            
-            # Get alkyl chains and functional groups
-            alkyl_chains = [f for f in fragments if f['fragment_type'].lower() == 'alkyl_chain']
-            functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']
-            
-            # For now, assume functional groups are evenly distributed
-            # This will need to be updated when we have chain-group assignment information
-            if len(alkyl_chains) > 0:
-                groups_per_chain = len(functional_groups) / len(alkyl_chains)
-                if groups_per_chain > max_groups_per_chain:
-                    return False, f"Too many groups per chain ({groups_per_chain:.1f} > {max_groups_per_chain})"
-                if groups_per_chain < min_groups_per_chain:
-                    return False, f"Too few groups per chain ({groups_per_chain:.1f} < {min_groups_per_chain})"
-            
-            return True, "Valid groups per chain"
+            return True, f"Valid number of functional groups on chain ({total_groups})"
             
         except Exception as e:
-            return False, f"Error validating groups per chain: {str(e)}"
+            return False, f"Error validating total functional groups on chain: {str(e)}"
 
-    def _validate_group_occurrences(self, alkyl_chain: Dict) -> Tuple[bool, str]:
-        """Validate occurrence constraints for functional groups on an alkyl chain"""
+    def _validate_specific_group_counts(self, alkyl_chain: Dict, functional_groups: List[Dict]) -> Tuple[bool, str]:
+        """Eq. 18: Validates that number of specific functional group types doesn't exceed their limits
+        
+        Σyingil ≤ nGal : Sum of functional groups of type i on chain l must not exceed maximum allowed nGal
+        
+        Args:
+            alkyl_chain: The alkyl chain fragment
+            functional_groups: List of functional group fragments to validate
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
         try:
-            # Get constraints from validation criteria or use defaults
-            max_occurrences = self.max_group_occurrences
-            min_occurrences = self.min_group_occurrences
+            if not self.validation_criteria:
+                return True, "No validation criteria set"
             
-            # For now, just check that we don't exceed max occurrences
-            # This will need to be updated when we have actual group occurrence information
-            return True, "Valid group occurrences"
-            
-        except Exception as e:
-            return False, f"Error validating group occurrences: {str(e)}"
-
-    def _validate_cation_group_occurrences(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """Validate cation-wide occurrence constraints for functional groups"""
-        try:
-            # Get constraints from validation criteria or use defaults
-            max_total_occurrences = self.max_total_group_occurrences
-            min_total_occurrences = self.min_total_group_occurrences
-            
-            # Get functional groups
-            functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']
-            
-            # Count occurrences of each group type
+            # Count occurrences of each functional group type
             group_counts = {}
             for group in functional_groups:
-                group_name = group['name']
-                group_counts[group_name] = group_counts.get(group_name, 0) + 1
+                group_type = group['name']
+                group_counts[group_type] = group_counts.get(group_type, 0) + 1
+            
+            max_group_counts = self._get_max_groups_per_type()
+            
+            for group_type, count in group_counts.items():
+                print(f"DEBUG: Functional group {group_type} has count {count} (max allowed: {max_group_counts})")
                 
-                if group_counts[group_name] > max_total_occurrences:
-                    return False, f"Group {group_name} occurs {group_counts[group_name]} times (max: {max_total_occurrences})"
-                if group_counts[group_name] < min_total_occurrences:
-                    return False, f"Group {group_name} occurs {group_counts[group_name]} times (min: {min_total_occurrences})"
+                if count > max_group_counts:
+                    return False, f"Too many groups of type {group_type} on chain: {count} (max: {max_group_counts})"
             
-            return True, "Valid group occurrences"
+            return True, "Valid functional group type counts on chain"
             
         except Exception as e:
-            return False, f"Error validating group occurrences: {str(e)}"
+            return False, f"Error validating specific functional group counts: {str(e)}"
 
-    def _validate_modified_octet_rule(self, fragments: List[Dict]) -> Tuple[bool, str]:
-        """Validate that the combination follows the modified octet rule"""
+    def _validate_group_occurrences_per_chain(self, alkyl_chain: Dict, functional_groups: List[Dict]) -> Tuple[bool, str]:
+        """Per-Chain Group Occurrence Constraints (Equations 19-21)
+        
+        These equations validate the number of occurrences of each group type WITHIN a single chain:
+        Eq. 19: Σyingil ≤ t1 (upper limit of a specific group on chain i)
+        Eq. 20: Σyingil ≥ t2 (lower limit of a specific group on chain i)
+        Eq. 21: Σyingil = t3 (exact count of a specific group on chain i)
+        
+        Args:
+            alkyl_chain: The alkyl chain fragment
+            functional_groups: List of functional groups attached to this chain
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
         try:
-            # Calculate total valence
-            total_valence = 0
+            if not self.validation_criteria:
+                return True, "No occurrence constraints set"
             
-            # Add cation valence
-            cation = next((f for f in fragments if f['fragment_type'].lower() == 'cation'), None)
-            if cation:
-                cation_valence = self._get_paper_valence(cation['fragment_type'], cation['name'])
-                if cation_valence is not None:
-                    total_valence += cation_valence
-            
-            # Add alkyl chain valences
-            alkyl_chains = [f for f in fragments if f['fragment_type'].lower() == 'alkyl_chain']
-            for chain in alkyl_chains:
-                chain_valence = self._get_paper_valence(chain['fragment_type'], chain['name'])
-                if chain_valence is not None:
-                    total_valence -= chain_valence  # Subtracting chain_valence since it consumes cation valence
-            
-            # Add functional group valences
-            functional_groups = [f for f in fragments if f['fragment_type'].lower() == 'functional_group']
+            # Count occurrences of each group type on this chain
+            group_counts = {}
             for group in functional_groups:
-                group_valence = self._get_paper_valence(group['fragment_type'], group['name'])
-                if group_valence is not None:
-                    total_valence -= group_valence
+                group_type = group['name']
+                group_counts[group_type] = group_counts.get(group_type, 0) + 1
             
-            # Validate total valence
-            if total_valence > self.max_valence:
-                return False, f"Invalid total valence: {total_valence} (max: {self.max_valence})"
-            if total_valence < self.min_valence:
-                return False, f"Invalid total valence: {total_valence} (min: {self.min_valence})"
+            for group_type, count in group_counts.items():
+                # Check upper limit (t1) - Eq. 19
+                if count > self.validation_criteria.group_occurrence_upper:
+                    return False, f"Group {group_type} occurs {count} times on chain {alkyl_chain['name']}, exceeding chain limit of {self.validation_criteria.group_occurrence_upper}"
+                
+                # Check lower limit (t2) - Eq. 20
+                if count < self.validation_criteria.group_occurrence_lower:
+                    return False, f"Group {group_type} occurs {count} times on chain {alkyl_chain['name']}, below chain minimum of {self.validation_criteria.group_occurrence_lower}"
+                
+                # Check exact count (t3) - Eq. 21
+                if self.validation_criteria.group_occurrence_exact >= 0 and count != self.validation_criteria.group_occurrence_exact:
+                    return False, f"Group {group_type} occurs {count} times on chain {alkyl_chain['name']}, must be exactly {self.validation_criteria.group_occurrence_exact}"
+                
+                print(f"DEBUG: Group {group_type} occurs {count} times on chain {alkyl_chain['name']} (chain limits: {self.validation_criteria.group_occurrence_lower}-{self.validation_criteria.group_occurrence_upper})")
             
-            return True, "Valid valence"
+            return True, "Valid group occurrences on chain"
             
         except Exception as e:
-            return False, f"Error validating modified octet rule: {str(e)}"
+            return False, f"Error validating group occurrences on chain: {str(e)}"
+
+    def _validate_total_group_occurrences(self, alkyl_chains: List[Dict], all_functional_groups: List[List[Dict]]) -> Tuple[bool, str]:
+        """Aggregate Group Occurrence Constraints (Equations 22-24)
+        
+        These equations validate the TOTAL number of occurrences of each group type ACROSS ALL chains:
+        Eq. 22: ΣΣyingil ≤ t4 (upper limit on total occurrences across all chains)
+        Eq. 23: ΣΣyingil ≥ t5 (lower limit on total occurrences across all chains)
+        Eq. 24: ΣΣyingil = t6 (exact count of occurrences across all chains)
+        
+        Args:
+            alkyl_chains: List of alkyl chain fragments
+            all_functional_groups: List of lists of functional groups (one list per chain)
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
+        try:
+            if not self.validation_criteria:
+                return True, "No total occurrence constraints set"
+            
+            # Count total occurrences of each group type across all chains
+            total_group_counts = {}
+            for chain_groups in all_functional_groups:
+                for group in chain_groups:
+                    group_type = group['name']
+                    total_group_counts[group_type] = total_group_counts.get(group_type, 0) + 1
+            
+            for group_type, total_count in total_group_counts.items():
+                # Check total upper limit (t4) - Eq. 22
+                if total_count > self.validation_criteria.alkyl_total_upper:
+                    return False, f"Group {group_type} occurs {total_count} times total, exceeding total limit of {self.validation_criteria.alkyl_total_upper}"
+                
+                # Check total lower limit (t5) - Eq. 23
+                if total_count < self.validation_criteria.alkyl_total_lower:
+                    return False, f"Group {group_type} occurs {total_count} times total, below total minimum of {self.validation_criteria.alkyl_total_lower}"
+                
+                # Check total exact count (t6) - Eq. 24
+                if self.validation_criteria.alkyl_total_exact >= 0 and total_count != self.validation_criteria.alkyl_total_exact:
+                    return False, f"Group {group_type} occurs {total_count} times total, must be exactly {self.validation_criteria.alkyl_total_exact}"
+                
+                print(f"DEBUG: Group {group_type} occurs {total_count} times across all chains (total limits: {self.validation_criteria.alkyl_total_lower}-{self.validation_criteria.alkyl_total_upper})")
+            
+            return True, "Valid total group occurrences"
+            
+        except Exception as e:
+            return False, f"Error validating total group occurrences: {str(e)}"
+
+    def _validate_cation_wide_constraints(self, cation: Dict, alkyl_chains: List[Dict]) -> Tuple[bool, str]:
+        """Cation-wide Group Constraints (Equations 22-24)
+        
+        These equations control the total number of alkyl chains across the whole cation:
+        Eq. 22: ΣΣyingil ≤ t4 (upper limit on total alkyl chains)
+        Eq. 23: ΣΣyingil ≥ t5 (lower limit on total alkyl chains)
+        Eq. 24: ΣΣyingil = t6 (exact total alkyl chain count)
+        
+        Args:
+            cation: The cation fragment
+            alkyl_chains: List of alkyl chain fragments attached to this cation
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
+        try:
+            if not self.validation_criteria:
+                return True, "No cation-wide constraints set"
+            
+            # Get total alkyl chain count
+            total_chains = len(alkyl_chains)
+
+            # Check upper limit (t4) - Eq. 22
+            # Note: Applying alkyl_total_upper constraint to the number of chains here
+            if total_chains > self.alkyl_total_upper:
+                return False, f"Total alkyl chains ({total_chains}) exceeds upper limit of {self.alkyl_total_upper}"
+
+            # Check lower limit (t5) - Eq. 23
+            # Note: Applying alkyl_total_lower constraint to the number of chains here
+            if total_chains < self.alkyl_total_lower:
+                return False, f"Total alkyl chains ({total_chains}) below lower limit of {self.alkyl_total_lower}"
+
+            # Check exact count (t6) - Eq. 24
+            # Note: Applying alkyl_total_exact constraint to the number of chains here
+            if self.alkyl_total_exact >= 0 and total_chains != self.alkyl_total_exact:
+                return False, f"Total alkyl chains ({total_chains}) must be exactly {self.alkyl_total_exact}"
+
+            # print(f"DEBUG: Total alkyl chains: {total_chains} (limits: {self.alkyl_total_lower}-{self.alkyl_total_upper})")
+            
+            return True, "Valid total alkyl chain count"
+            
+        except Exception as e:
+            return False, f"Error validating total alkyl chains: {str(e)}"
+
+    def validate(self, cation: Dict, anion: Dict, alkyl_chains: List[Dict], functional_groups_per_chain: List[List[Dict]] = None) -> Tuple[bool, str]:
+        """
+        Validate a combination of fragments
+        
+        Args:
+            cation: The cation fragment
+            anion: The anion fragment
+            alkyl_chains: List of alkyl chain fragments
+            functional_groups_per_chain: List of lists of functional groups (one list per chain)
+            
+        Returns:
+            Tuple[bool, str]: (is_valid, message)
+        """
+        try:
+            # Define log_name early, before it's used in the loop
+            log_name = f"{cation.get('name', 'C')}/{anion.get('name', 'A')}/{'/'.join(c.get('name', 'Alk') for c in alkyl_chains)}" # For logging
+
+            # Initialize empty lists if no functional groups provided
+            functional_groups_per_chain = functional_groups_per_chain or [[] for _ in alkyl_chains]
+            
+            # Ensure we have same number of functional group lists as chains
+            if len(functional_groups_per_chain) != len(alkyl_chains):
+                return False, f"Mismatch between number of chains ({len(alkyl_chains)}) and functional group lists ({len(functional_groups_per_chain)})"
+            
+            # Flatten all fragments for basic validation
+            all_fragments = [cation, anion] + alkyl_chains + [g for chain_groups in functional_groups_per_chain for g in chain_groups]
+            
+            # Check fragment counts
+            is_valid, message = self._validate_anion_cation_counts(all_fragments)
+            if not is_valid:
+                return False, message
+
+            # Check if we can get properties for all fragments
+            for frag in all_fragments:
+                props = get_fragment_properties(frag['name'], frag['fragment_type'])
+                if not props:
+                    return False, f"{frag['fragment_type'].title()} {frag.get('name')} properties not found"
+            
+            # Validate alkyl chain count based on cation valence
+            is_valid, message = self._alkyl_chain_count(all_fragments)
+            if not is_valid:
+                return False, message
+            
+            # Validate per-chain constraints
+            for i, (chain, chain_groups) in enumerate(zip(alkyl_chains, functional_groups_per_chain)):
+                chain_log_name = f"{log_name} Chain {i+1} ({chain.get('name', 'Unknown')})"
+                print(f"DEBUG [{chain_log_name}]: Checking Total Groups (Eq 17)...")
+                # Validate total groups on this chain
+                is_valid, message = self._validate_total_groups_per_chain(chain, chain_groups)
+                if not is_valid:
+                    print(f"FAILED [{chain_log_name}]: Total Groups - {message}")
+                    return False, message
+                print(f"PASSED [{chain_log_name}]: Total Groups")
+
+                print(f"DEBUG [{chain_log_name}]: Checking Specific Group Counts (Eq 18)...")
+                # Validate specific group counts on this chain
+                is_valid, message = self._validate_specific_group_counts(chain, chain_groups)
+                if not is_valid:
+                    print(f"FAILED [{chain_log_name}]: Specific Group Counts - {message}")
+                    return False, message
+                print(f"PASSED [{chain_log_name}]: Specific Group Counts")
+
+                print(f"DEBUG [{chain_log_name}]: Checking Group Occurrences (Eq 19-21)...")
+                # Validate group occurrences per chain (Eq. 19-21)
+                is_valid, message = self._validate_group_occurrences_per_chain(chain, chain_groups)
+                if not is_valid:
+                    print(f"FAILED [{chain_log_name}]: Group Occurrences - {message}")
+                    return False, message
+                print(f"PASSED [{chain_log_name}]: Group Occurrences")
+
+                # --- Skipping call to undefined _validate_intrachain_bonding_eq16 ---
+                # print(f"DEBUG [{chain_log_name}]: Checking Intra-Chain Bonding (Eq 16)...")
+                # # Validate intra-chain bonding (Eq. 16)
+                # is_valid, message = self._validate_intrachain_bonding_eq16(chain, chain_groups)
+                # if not is_valid:
+                #     print(f"FAILED [{chain_log_name}]: Intra-Chain Bonding - {message}")
+                #     return False, message
+                # print(f"PASSED [{chain_log_name}]: Intra-Chain Bonding")
+
+            # Validate total group occurrences across all chains (Eq. 22-24)
+            print(f"DEBUG [{log_name}]: Checking Total Group Occurrences (Eq 22-24 for Func Groups)...")
+            # Note: This checks functional groups, not alkyl groups as Eq 22-24 might imply
+            is_valid, message = self._validate_total_group_occurrences(alkyl_chains, functional_groups_per_chain)
+            if not is_valid:
+                print(f"FAILED [{log_name}]: Total Group Occurrences - {message}")
+                return False, message
+            print(f"PASSED [{log_name}]: Total Group Occurrences")
+
+            # Validate cation-wide constraints (Eq 22-24 applied to # chains - likely misinterpretation)
+            print(f"DEBUG [{log_name}]: Checking Cation-Wide Constraints (Eq 22-24 for # Chains)...")
+            is_valid, message = self._validate_cation_wide_constraints(cation, alkyl_chains)
+            if not is_valid:
+                print(f"FAILED [{log_name}]: Cation-Wide Constraints - {message}")
+                return False, message
+            print(f"PASSED [{log_name}]: Cation-Wide Constraints")
+
+            # --- Missing Eq 15 & 16 validation ---
+            # Note: The RDKit valence check added previously was removed as it was too strict for fragment SMILES.
+
+            # log_name defined earlier now
+
+            # --- Simple Charge Check (Proxy for Eq 15) ---
+            total_charge = 0
+            for frag in all_fragments:
+                props = get_fragment_properties(frag['name'], frag['fragment_type'])
+                # Use charge from properties if available, otherwise default based on type
+                charge = props.get('charge')
+                if charge is None:
+                     if frag['fragment_type'].lower() == 'cation': charge = 1
+                     elif frag['fragment_type'].lower() == 'anion': charge = -1
+                     else: charge = 0
+                total_charge += charge
+
+            if total_charge != 0:
+                 print(f"FAILED [{log_name}]: Total charge is not zero ({total_charge})")
+                 return False, f"Invalid combination: Total charge is {total_charge}, expected 0."
+            print(f"PASSED [{log_name}]: Total Charge Check (Result: {total_charge})")
+            # --- End Charge Check ---
+
+            print(f"PASSED [{log_name}]: All implemented validation checks.")
+            return True, "Valid combination"
+            
+        except Exception as e:
+            return False, f"Error validating combination: {str(e)}"

@@ -38,3 +38,9 @@ ENV/
 # Checkpoints directory (our manual backups)
 checkpoints/
 .windsurfrules
+data/1-s2.0-S1474034608000281-main.pdf
+data/AIChE Journal - 2013 - Karunanithi - Computer‐aided design of tailor‐made ionic liquids.pdf
+data/density-yeshreeve.pdf
+data/heatcapacity-Chen.pdf
+data/The Arrhenius Equation Revisited.pdf
+archive/

@@ -190,9 +190,13 @@ def screen_fragments_by_solubility(fragments_data: Dict[str, List[Dict]],
                 test_combo['anion'],
                 test_combo['alkyl_chain']
             )
-            
-            # Check if within range
-            if solubility and min_solubility <= solubility <= max_solubility:
+
+            # Apply a margin (e.g., 40%) to the target range for coarse screening
+            screening_min = min_solubility * 0.60 # Allow 40% below min target
+            screening_max = max_solubility * 1.40 # Allow 40% above max target
+
+            # Check if the solubility of the test combination is within the broadened range
+            if solubility is not None and screening_min <= solubility <= screening_max:
                 screened_fragments[frag_type].append(fragment)
     
     return screened_fragments

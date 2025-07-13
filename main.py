@@ -130,22 +130,24 @@ def combine_fragments_and_calculate_properties():
                 il_name = generate_il_name(cation, anion, alkyl)
                 
                 # Calculate properties
-                heat_capacity = calculate_ionic_liquid_heat_capacity({
+                heat_capacity_results = calculate_ionic_liquid_heat_capacity({
                     'cation': cation,
                     'anion': anion,
-                    'alkyl': alkyl
+                    'alkyl_chain': alkyl # Assuming 'alkyl' corresponds to 'alkyl_chain' needed by the function
                 })
-                
+                heat_capacity_molar = heat_capacity_results.get('molar') if heat_capacity_results else None
+
+                # Assuming calculate_ionic_liquid_density exists and works similarly
                 density = calculate_ionic_liquid_density({
                     'cation': cation,
                     'anion': anion,
-                    'alkyl': alkyl
+                    'alkyl_chain': alkyl # Assuming 'alkyl' corresponds to 'alkyl_chain'
                 })
-                
-                if heat_capacity is not None and density is not None:
+
+                if heat_capacity_molar is not None and density is not None:
                     combination = {
                         'name': il_name,
-                        'heat_capacity': heat_capacity,
+                        'heat_capacity': heat_capacity_molar, # Use molar value
                         'density': density,
                         'in_ilthermo': is_in_il_thermo(il_name)
                     }

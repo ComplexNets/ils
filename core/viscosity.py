@@ -233,11 +233,17 @@ def screen_fragments_by_viscosity(fragments_data: Dict[str, List[Dict]],
                     test_il['anion'],
                     test_il['alkyl_chain']
                 )
-                
-                if viscosity and min_viscosity <= viscosity <= max_viscosity:
+
+                # Apply a margin (e.g., 40%) to the target range for coarse screening
+                screening_min = min_viscosity * 0.60 # Allow 40% below min target
+                screening_max = max_viscosity * 1.40 # Allow 40% above max target
+
+                # Check if the viscosity of the test combination is within the broadened range
+                if viscosity is not None and screening_min <= viscosity <= screening_max:
                     screened_fragments[frag_type].append(frag)
-                    
-            except Exception:
+
+            except Exception as e: # Catch specific exceptions if possible, or log the error
+                print(f"Screening error for fragment {frag.get('name', 'Unknown')}: {e}")
                 continue
                 
     return screened_fragments

@@ -5,6 +5,7 @@ import os
 import requests
 import pandas as pd
 from typing import Dict, Optional
+import json # Import json for JSONDecodeError
 
 # Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,23 +69,46 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
     try:
         cation_name = cation['name'].lower()
         anion_name = anion['name'].lower()
-        alkyl_name = alkyl['name'].lower()
-        
-        # Format cation naming by checking specific cation type
-        if "imidazolium" in cation_name:
-            # Special case for identical substituents
-            if alkyl_name == "methyl":
-                formatted_cation = f"1,3-dimethylimidazolium"
+        base_alkyl_name = alkyl['name'].lower() # Store original alkyl name
+
+        # === START NEW Functional Group Handling ===
+        # If functional group exists, modify the alkyl name *before* cation formatting
+        if functional_group:
+            functional_group_name = functional_group['name'].lower()
+            # Determine the functionalized alkyl part string (assuming positions)
+            if functional_group_name == "hydroxyl":
+                # Assume position 2 for hydroxyl based on common examples
+                alkyl_name = f"(2-hydroxy{base_alkyl_name})"
+            elif functional_group_name == "amino":
+                # Assume position 3 for amino based on common examples
+                alkyl_name = f"(3-amino{base_alkyl_name})"
             else:
-                formatted_cation = f"1-{alkyl_name}-3-methylimidazolium"
+                # Generic fallback - just prepend functional group name
+                # This might need refinement based on specific functional groups
+                alkyl_name = f"({functional_group_name}{base_alkyl_name})"
+        else:
+             # No functional group, use the base alkyl name
+             alkyl_name = base_alkyl_name
+        # === END NEW Functional Group Handling ===
+
+        # Format cation naming by checking specific cation type (using potentially modified alkyl_name)
+        if "imidazolium" in cation_name:
+            # Special case for identical substituents (check base_alkyl_name here)
+            if base_alkyl_name == "methyl" and not functional_group: # Only if methyl is the *only* substituent
+                 formatted_cation = f"1,3-dimethylimidazolium"
+            # The 'else' now correctly handles non-methyl base alkyls AND functionalized alkyls
+            else:
+                 formatted_cation = f"1-{alkyl_name}-3-methylimidazolium"
         elif "pyridinium" in cation_name:
             # Both N- and 1- prefixes are acceptable for pyridinium
             formatted_cation = f"1-{alkyl_name}pyridinium"
         elif "ammonium" in cation_name:
             # Updated naming convention for quaternary ammonium used in IL literature
-            if alkyl_name == "methyl":
+            # Special case for tetramethylammonium (only if base is methyl and no FG)
+            if base_alkyl_name == "methyl" and not functional_group:
                 formatted_cation = "tetramethylammonium"
             else:
+                # Handles non-methyl base alkyls AND functionalized alkyls
                 formatted_cation = f"{alkyl_name}trimethylammonium"
         elif "phosphonium" in cation_name:
             # Proper naming for phosphonium
@@ -100,52 +124,7 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
             # Generic fallback for other cation types
             formatted_cation = f"{alkyl_name}-{cation_name}"
         
-        # Add functional group if present
-        if functional_group:
-            functional_group_name = functional_group['name'].lower()
-            
-            # Proper functional group naming based on type
-            if functional_group_name == "hydroxyl":
-                # Format as 1-(2-hydroxyethyl)-3-methylimidazolium
-                if "imidazolium" in cation_name:
-                    # Extract the alkyl part and add hydroxy prefix
-                    alkyl_carbon_count = _get_alkyl_carbon_count(alkyl_name)
-                    if alkyl_carbon_count > 0:
-                        formatted_cation = f"1-(2-hydroxy{alkyl_name})-3-methylimidazolium"
-                    else:
-                        formatted_cation = f"1-(hydroxy{alkyl_name})-3-methylimidazolium"
-                elif "pyridinium" in cation_name:
-                    formatted_cation = f"1-(2-hydroxy{alkyl_name})pyridinium"
-                elif "ammonium" in cation_name:
-                    formatted_cation = f"(2-hydroxy{alkyl_name})trimethylammonium"
-                elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
-                    formatted_cation = f"N-(2-hydroxy{alkyl_name})-N-methylpyrrolidinium"
-                else:
-                    # Generic fallback
-                    formatted_cation = f"(2-hydroxy{alkyl_name})-{cation_name}"
-            elif functional_group_name == "amino":
-                # Format as 1-(3-aminopropyl)-3-methylimidazolium
-                if "imidazolium" in cation_name:
-                    # Extract the alkyl part and add amino prefix
-                    alkyl_carbon_count = _get_alkyl_carbon_count(alkyl_name)
-                    if alkyl_carbon_count > 0:
-                        formatted_cation = f"1-(3-amino{alkyl_name})-3-methylimidazolium"
-                    else:
-                        formatted_cation = f"1-(amino{alkyl_name})-3-methylimidazolium"
-                elif "pyridinium" in cation_name:
-                    formatted_cation = f"1-(3-amino{alkyl_name})pyridinium"
-                elif "ammonium" in cation_name:
-                    formatted_cation = f"(3-amino{alkyl_name})trimethylammonium"
-                elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
-                    formatted_cation = f"N-(3-amino{alkyl_name})-N-methylpyrrolidinium"
-                else:
-                    # Generic fallback
-                    formatted_cation = f"(3-amino{alkyl_name})-{cation_name}"
-            else:
-                # Generic functional group handling
-                formatted_cation = f"{functional_group_name}-{formatted_cation}"
-
-        # Anion mapping with standardized names
+        # Anion mapping with standardized names (functional group logic moved earlier)
         anion_mapping = {
             'chloride': 'chloride',
             'bromide': 'bromide',
@@ -348,30 +327,18 @@ def is_in_il_thermo(il_name):
         "ethyltrimethylammonium bis(trifluoromethanesulfonyl)imide",
         "butyltrimethylammonium bis(trifluoromethanesulfonyl)imide",
     ]
-    
-    # Standardize the name: ensure proper spacing and lowercase
-    search_name = ' '.join(il_name.lower().split())
-    
-    # Special case for known compounds
-    if ("ethyl" in search_name and "methylimidazolium" in search_name and "tetrafluoroborate" in search_name) or \
-       ("butyl" in search_name and "methylimidazolium" in search_name and "tetrafluoroborate" in search_name):
-        return True
-    
+    # Standardize the name using the dedicated function
+    search_name = standardize_il_name(il_name)
+
     # Check for exact match in our known list
     for known_compound in known_ilthermo_compounds:
-        if search_name == known_compound.lower():
+        # Standardize the known compound name as well for consistent comparison
+        if search_name == standardize_il_name(known_compound):
+            print(f"DEBUG: ILThermo match found in local list: {search_name}")
             return True
     
-    # Check for partial matches in our known list
-    for known_compound in known_ilthermo_compounds:
-        # Split into parts and check if all parts are in the search name
-        known_parts = known_compound.lower().split()
-        search_parts = search_name.split()
-        
-        # Check if all known parts are in search parts
-        if all(part in search_parts for part in known_parts):
-            return True
-    
+    # Removed flawed partial match logic
+
     # If not in known list, try the API
     try:
         base_url = "https://ilthermo.boulder.nist.gov/ILT2/ilsearch"
@@ -381,22 +348,32 @@ def is_in_il_thermo(il_name):
         }
         params = {'cmp': search_name, 'orderby': 'T', 'output': 'json'}
         
-        # Use a short timeout to avoid hanging
-        response = requests.get(base_url, params=params, headers=headers, timeout=3)
+        print(f"DEBUG: Querying ILThermo API for: {search_name}")
+        # Use a longer timeout and specific exception handling
+        response = requests.get(base_url, params=params, headers=headers, timeout=10) # Increased timeout to 10s
         
-        if response.status_code == 200:
-            try:
-                data = response.json()
-                if 'res' in data and data['res']:
-                    return True
-                return False
-            except:
-                return False
+        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+
+        data = response.json()
+        if 'res' in data and data['res']:
+            print(f"DEBUG: ILThermo API found match for: {search_name}")
+            return True
         else:
+            print(f"DEBUG: ILThermo API found no match for: {search_name}")
             return False
-            
-    except Exception:
-        # If API fails, just rely on our known list (which we already checked)
+
+    except requests.exceptions.Timeout:
+        print(f"Warning: ILThermo API query timed out for '{search_name}'. Assuming not present.")
+        return False
+    except requests.exceptions.RequestException as e:
+        print(f"Warning: ILThermo API query failed for '{search_name}': {e}. Assuming not present.")
+        return False
+    except json.JSONDecodeError:
+        print(f"Warning: Failed to decode ILThermo API response for '{search_name}'. Assuming not present.")
+        return False
+    except Exception as e:
+        # Catch any other unexpected errors during the API call
+        print(f"Warning: Unexpected error during ILThermo check for '{search_name}': {e}. Assuming not present.")
         return False
 
 if __name__ == "__main__":

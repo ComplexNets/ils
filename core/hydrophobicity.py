@@ -195,9 +195,14 @@ def screen_fragments_by_hydrophobicity(fragments_data: Dict[str, List[Dict]],
                 
             try:
                 logp = calculate_fragment_logp(frag['smiles'])
-                if min_logp <= logp <= max_logp:
+
+                # Apply a margin (e.g., +/- 1.0 log unit) to the target range for coarse screening
+                screening_min = min_logp - 1.0
+                screening_max = max_logp + 1.0
+
+                if screening_min <= logp <= screening_max:
                     screened_fragments[frag_type].append(frag)
-            except:
+            except ValueError: # Be more specific about the exception
                 continue
                 
     return screened_fragments

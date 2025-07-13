@@ -267,12 +267,12 @@ class ParetoOptimizer:
             for prop_name, (min_val, max_val) in property_ranges.items():
                 if prop_name not in fragment:
                     continue
-                    
-                # Use wider ranges for screening (±30%)
-                range_width = max_val - min_val
-                screening_min = min_val - (0.3 * range_width)
-                screening_max = max_val + (0.3 * range_width)
-                
+
+                # Apply a margin (e.g., 40%) to the target range for coarse screening
+                # Note: This assumes properties are >= 0. Adjust if negative values are possible.
+                screening_min = min_val * 0.60 # Allow 40% below min target
+                screening_max = max_val * 1.40 # Allow 40% above max target
+
                 if not (screening_min <= fragment[prop_name] <= screening_max):
                     meets_criteria = False
                     break

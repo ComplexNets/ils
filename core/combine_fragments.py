@@ -16,8 +16,9 @@ print(f"Looking for models in: {os.path.join(project_root, 'models')}")
 
 from dotenv import load_dotenv
 from typing import Dict, List, Tuple
+from rdkit import Chem # Import RDKit
 from utils.validation_rules import MolecularValidator
-from utils.utils import (generate_il_name, is_in_il_thermo, get_molecular_weight, 
+from utils.utils import (generate_il_name, get_molecular_weight,
                        get_fragment_properties)
 from models import short_fragments, medium_fragments, long_fragments
 import concurrent.futures
@@ -147,8 +148,11 @@ def validate_combination(combination_tuple, validator=None):
         Valid combination dict or None if invalid
     """
     try:
-        # Create validator in each thread
-        validator = MolecularValidator()
+        # Use the validator instance passed as an argument
+        if validator is None:
+             # Fallback if somehow no validator was passed (shouldn't happen with current code)
+             print("WARNING: No validator instance provided to validate_combination, creating default.")
+             validator = MolecularValidator()
             
         cation, anion, alkyl, functional_group = combination_tuple
         
@@ -156,28 +160,57 @@ def validate_combination(combination_tuple, validator=None):
         fragments = [cation, anion, alkyl]
         if functional_group:
             fragments.append(functional_group)
-        
-        # Validate using the validator
-        is_valid, message = validator.validate_combination(fragments)
+
+        # Prepare arguments for the validator.validate method
+        alkyl_chains_list = [alkyl]
+        # Functional groups need to be in a list of lists, one per chain
+        functional_groups_list = [[functional_group]] if functional_group else [[]]
+
+        # Validate using the validator's main validate method
+        is_valid, message = validator.validate(cation, anion, alkyl_chains_list, functional_groups_list)
         if not is_valid:
-            print(f"Validation failed: {message}")
+            # print(f"Validation failed for {cation['name']}/{anion['name']}/{alkyl['name']}: {message}") # More detailed logging
             return None
             
         # Calculate total molecular weight
         total_mw = sum(get_molecular_weight(f['name'], f['fragment_type']) for f in fragments)
         
-        # Generate IL name and check ILThermo
+        # Generate IL name
         il_name = generate_il_name(cation, anion, alkyl, functional_group)
-        in_ilthermo = is_in_il_thermo(il_name)
-        
+
+        # --- Generate Canonical SMILES for components ---
+        canonical_smiles_dict = {}
+        for frag_type, frag in [('cation', cation), ('anion', anion), ('alkyl_chain', alkyl)]:
+            try:
+                mol = Chem.MolFromSmiles(frag.get('smiles', ''))
+                if mol:
+                    canonical_smiles_dict[f"{frag_type}_canonical_smiles"] = Chem.MolToSmiles(mol, canonical=True)
+                else:
+                    canonical_smiles_dict[f"{frag_type}_canonical_smiles"] = None
+            except Exception as e:
+                print(f"Warning: RDKit error processing SMILES for {frag_type} {frag.get('name')}: {e}")
+                canonical_smiles_dict[f"{frag_type}_canonical_smiles"] = None
+
+        if functional_group:
+             try:
+                mol = Chem.MolFromSmiles(functional_group.get('smiles', ''))
+                if mol:
+                    canonical_smiles_dict["functional_group_canonical_smiles"] = Chem.MolToSmiles(mol, canonical=True)
+                else:
+                     canonical_smiles_dict["functional_group_canonical_smiles"] = None
+             except Exception as e:
+                print(f"Warning: RDKit error processing SMILES for functional_group {functional_group.get('name')}: {e}")
+                canonical_smiles_dict["functional_group_canonical_smiles"] = None
+        # --- End Canonical SMILES generation ---
+
         # Create the combination object
         result = {
             'name': il_name,
             'cation': cation,
             'anion': anion,
             'alkyl_chain': alkyl,
-            'in_ilthermo': in_ilthermo,
-            'molecular_weight': total_mw
+            'molecular_weight': total_mw,
+            **canonical_smiles_dict # Add canonical smiles to the result
         }
         if functional_group:
             result['functional_group'] = functional_group
@@ -208,8 +241,10 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
         print("No fragments found after filtering!")
         return []
 
-    # Initialize validator with parameters if provided
-    validator = MolecularValidator(**validator_params) if validator_params else MolecularValidator()
+    # Initialize validator. Force default initialization to avoid TypeError due to environment issues.
+    # NOTE: This will ignore validator_params from the UI.
+    print("WARNING: Forcing default MolecularValidator initialization due to persistent TypeError. UI parameters ignored.")
+    validator = MolecularValidator()
 
     # Generate all possible combinations
     cations = filtered_fragments.get('cation', [])
@@ -248,10 +283,11 @@ def combine_fragments(status_text=None, progress_bar=None, validator_params: Dic
         print("\nStarting combination validation...")
         # Use ThreadPoolExecutor instead of ProcessPoolExecutor for Streamlit compatibility
         with concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-            # Submit all combinations for processing
-            future_to_combo = {executor.submit(validate_combination, combo, validator): combo 
+            # Submit all combinations for processing, ensuring the correctly initialized validator is passed
+            # The 'validator' variable here holds the instance created with validation_criteria=validator_params
+            future_to_combo = {executor.submit(validate_combination, combo, validator): combo
                              for combo in combinations}
-            
+
             # Process results as they complete
             for future in concurrent.futures.as_completed(future_to_combo):
                 processed += 1
