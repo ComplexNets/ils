@@ -4,7 +4,7 @@ import sys
 import os
 import requests
 import pandas as pd
-from typing import Dict, Optional
+from typing import Dict, Optional, List, Union
 import json # Import json for JSONDecodeError
 
 # Add project root to Python path
@@ -54,77 +54,110 @@ def standardize_il_name(name: str) -> str:
     
     return standardized
 
-def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: Dict = None) -> str:
+def generate_il_name(cation: Dict, anion: Dict, alkyl_chains: Union[Dict, List[Dict]], functional_groups: Optional[Union[Dict, List[List[Dict]]]] = None) -> str:
     """
     Generate standardized IUPAC-compliant name for ionic liquid combination
     
-    Following proper naming conventions:
-    - Imidazolium: 1-alkyl-3-methylimidazolium (or 1,3-dialkylimidazolium for identical substituents)
-    - Pyridinium: N-alkylpyridinium or 1-alkylpyridinium
-    - Ammonium: alkyltrimethylammonium (or tetramethylammonium for methyl)
-    - Pyrrolidinium: N-alkyl-N-methylpyrrolidinium
-    - Piperidinium: N-alkyl-N-methylpiperidinium
-    - Functional groups should specify position: 1-(2-hydroxyethyl)-3-methylimidazolium
+    Args:
+        cation: Dictionary containing cation information
+        anion: Dictionary containing anion information
+        alkyl_chains: Either a single alkyl chain dict (old format) or list of alkyl chain dicts (new format)
+        functional_groups: Either a single functional group dict (old format) or list of lists of functional group dicts (new format)
+        
+    Returns:
+        str: IUPAC-compliant ionic liquid name
     """
     try:
+        # Handle backward compatibility - convert old format to new format
+        if isinstance(alkyl_chains, dict):
+            alkyl_chains = [alkyl_chains]
+            functional_groups = [[functional_groups]] if functional_groups else None
+            
         cation_name = cation['name'].lower()
         anion_name = anion['name'].lower()
-        base_alkyl_name = alkyl['name'].lower() # Store original alkyl name
-
-        # === START NEW Functional Group Handling ===
-        # If functional group exists, modify the alkyl name *before* cation formatting
-        if functional_group:
-            functional_group_name = functional_group['name'].lower()
-            # Determine the functionalized alkyl part string (assuming positions)
-            if functional_group_name == "hydroxyl":
-                # Assume position 2 for hydroxyl based on common examples
-                alkyl_name = f"(2-hydroxy{base_alkyl_name})"
-            elif functional_group_name == "amino":
-                # Assume position 3 for amino based on common examples
-                alkyl_name = f"(3-amino{base_alkyl_name})"
-            else:
-                # Generic fallback - just prepend functional group name
-                # This might need refinement based on specific functional groups
-                alkyl_name = f"({functional_group_name}{base_alkyl_name})"
-        else:
-             # No functional group, use the base alkyl name
-             alkyl_name = base_alkyl_name
-        # === END NEW Functional Group Handling ===
-
-        # Format cation naming by checking specific cation type (using potentially modified alkyl_name)
+        
+        # Format alkyl chains with their functional groups
+        formatted_alkyl_chains = []
+        for i, alkyl in enumerate(alkyl_chains):
+            if not isinstance(alkyl, dict) or 'name' not in alkyl:
+                print(f"Warning: Invalid alkyl chain format at index {i}")
+                continue
+                
+            chain_name = alkyl['name'].lower()
+            
+            # Add functional groups if present
+            if functional_groups and i < len(functional_groups) and functional_groups[i]:
+                for fg in functional_groups[i]:
+                    if not isinstance(fg, dict) or 'name' not in fg:
+                        print(f"Warning: Invalid functional group format")
+                        continue
+                    fg_name = fg['name'].lower()
+                    # Assume position 2 for hydroxyl and 3 for amino based on common examples
+                    if fg_name == "hydroxyl":
+                        chain_name = f"(2-hydroxy{chain_name})"
+                    elif fg_name == "amino":
+                        chain_name = f"(3-amino{chain_name})"
+                    else:
+                        chain_name = f"({fg_name}{chain_name})"
+            formatted_alkyl_chains.append(chain_name)
+        
+        # Format cation name based on type and number of alkyl chains
         if "imidazolium" in cation_name:
-            # Special case for identical substituents (check base_alkyl_name here)
-            if base_alkyl_name == "methyl" and not functional_group: # Only if methyl is the *only* substituent
-                 formatted_cation = f"1,3-dimethylimidazolium"
-            # The 'else' now correctly handles non-methyl base alkyls AND functionalized alkyls
+            # Handle imidazolium with actual alkyl chains
+            if len(formatted_alkyl_chains) == 2:
+                formatted_cation = f"1-{formatted_alkyl_chains[0]}-3-{formatted_alkyl_chains[1]}imidazolium"
+            elif len(formatted_alkyl_chains) == 1:
+                formatted_cation = f"1-{formatted_alkyl_chains[0]}imidazolium"
             else:
-                 formatted_cation = f"1-{alkyl_name}-3-methylimidazolium"
+                # Handle other cases with position numbers
+                formatted_cation = "imidazolium"
+                for i, chain in enumerate(formatted_alkyl_chains, 1):
+                    formatted_cation = f"{i}-{chain}-{formatted_cation}"
+                
         elif "pyridinium" in cation_name:
-            # Both N- and 1- prefixes are acceptable for pyridinium
-            formatted_cation = f"1-{alkyl_name}pyridinium"
-        elif "ammonium" in cation_name:
-            # Updated naming convention for quaternary ammonium used in IL literature
-            # Special case for tetramethylammonium (only if base is methyl and no FG)
-            if base_alkyl_name == "methyl" and not functional_group:
-                formatted_cation = "tetramethylammonium"
+            # Handle pyridinium with actual chains
+            if formatted_alkyl_chains:
+                formatted_cation = f"1-{formatted_alkyl_chains[0]}pyridinium"
+                # Add additional chains if present
+                for i, chain in enumerate(formatted_alkyl_chains[1:], 2):
+                    formatted_cation = f"{i}-{chain}-{formatted_cation}"
             else:
-                # Handles non-methyl base alkyls AND functionalized alkyls
-                formatted_cation = f"{alkyl_name}trimethylammonium"
+                formatted_cation = "pyridinium"
+                
+        elif "ammonium" in cation_name:
+            # Handle ammonium with actual chains
+            if len(formatted_alkyl_chains) == 4:
+                formatted_cation = f"tetra{formatted_alkyl_chains[0]}ammonium"
+            else:
+                prefix = {1: "", 2: "di", 3: "tri", 4: "tetra"}
+                formatted_cation = f"{prefix.get(len(formatted_alkyl_chains), '')}{formatted_alkyl_chains[0]}ammonium"
         elif "phosphonium" in cation_name:
-            # Proper naming for phosphonium
-            formatted_cation = f"tetra{alkyl_name}phosphonium"
-            # Alternative: P,P,P-trihexyl-P-{alkyl_name}phosphonium
-        elif "pyrrolidinium" in cation_name:
-            # Pyrrolidinium cations
-            formatted_cation = f"N-{alkyl_name}-N-methylpyrrolidinium"
-        elif "piperidinium" in cation_name:
-            # Piperidinium cations
-            formatted_cation = f"N-{alkyl_name}-N-methylpiperidinium"
+            # Handle phosphonium with actual chains
+            if len(formatted_alkyl_chains) == 4:
+                formatted_cation = f"tetra{formatted_alkyl_chains[0]}phosphonium"
+            else:
+                formatted_cation = "phosphonium"
+                for i, chain in enumerate(formatted_alkyl_chains, 1):
+                    formatted_cation = f"P{i}-{chain}-{formatted_cation}"
+                
+        elif "pyrrolidinium" in cation_name or "piperidinium" in cation_name:
+            # Handle pyrrolidinium/piperidinium with actual chains
+            if formatted_alkyl_chains:
+                base = "pyrrolidinium" if "pyrrolidinium" in cation_name else "piperidinium"
+                if len(formatted_alkyl_chains) == 2:
+                    formatted_cation = f"N-{formatted_alkyl_chains[0]}-N-{formatted_alkyl_chains[1]}{base}"
+                else:
+                    formatted_cation = f"N-{formatted_alkyl_chains[0]}{base}"
+            else:
+                formatted_cation = cation_name
+                
         else:
             # Generic fallback for other cation types
-            formatted_cation = f"{alkyl_name}-{cation_name}"
+            formatted_cation = cation_name
+            for i, chain in enumerate(formatted_alkyl_chains):
+                formatted_cation = f"{chain}-{formatted_cation}"
         
-        # Anion mapping with standardized names (functional group logic moved earlier)
+        # Anion mapping with standardized names
         anion_mapping = {
             'chloride': 'chloride',
             'bromide': 'bromide',
@@ -154,7 +187,7 @@ def generate_il_name(cation: Dict, anion: Dict, alkyl: Dict, functional_group: D
         print(f"Error in IL name generation: Missing key {e}")
         return "unknown-il"
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in generate_il_name: {str(e)}")
         return "unknown-il"
 
 def _get_alkyl_carbon_count(alkyl_name: str) -> int:
